@@ -89,7 +89,6 @@ def state_symbol(state):
     symbols = {
         WorkerStatus.BUSY: red('busy'),
         WorkerStatus.IDLE: green('idle'),
-        WorkerStatus.SUSPENDED: yellow('suspended'),
     }
     try:
         return symbols[state]

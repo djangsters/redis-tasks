@@ -28,7 +28,6 @@ from rq import (get_failed_queue, Queue, SimpleWorker, Worker,
 from rq.compat import as_text, PY2
 from rq.job import Job, JobStatus
 from rq.registry import StartedJobRegistry
-from rq.suspension import resume, suspend
 from rq.utils import utcnow
 from rq.worker import HerokuWorker, WorkerStatus
 
@@ -363,22 +362,6 @@ class TestWorker(RQTestCase):
         self.assertEqual(job.is_finished, False)
         self.assertEqual(job.is_failed, True)
 
-    def test_job_dependency(self):
-        """Enqueue dependent jobs only if their parents don't fail"""
-        q = Queue()
-        w = Worker([q])
-        parent_job = q.enqueue(say_hello, result_ttl=0)
-        job = q.enqueue_call(say_hello, depends_on=parent_job)
-        w.work(burst=True)
-        job = Job.fetch(job.id)
-        self.assertEqual(job.get_status(), JobStatus.FINISHED)
-
-        parent_job = q.enqueue(div_by_zero)
-        job = q.enqueue_call(say_hello, depends_on=parent_job)
-        w.work(burst=True)
-        job = Job.fetch(job.id)
-        self.assertNotEqual(job.get_status(), JobStatus.FINISHED)
-
     def test_get_current_job(self):
         """Ensure worker.get_current_job() works properly"""
         q = Queue()
@@ -479,57 +462,6 @@ class TestWorker(RQTestCase):
         self.assertEqual(w.work(burst=True), True,
                          'Expected at least some work done.')
 
-    def test_suspend_worker_execution(self):
-        """Test Pause Worker Execution"""
-
-        SENTINEL_FILE = '/tmp/rq-tests.txt'
-
-        try:
-            # Remove the sentinel if it is leftover from a previous test run
-            os.remove(SENTINEL_FILE)
-        except OSError as e:
-            if e.errno != 2:
-                raise
-
-        q = Queue()
-        q.enqueue(create_file, SENTINEL_FILE)
-
-        w = Worker([q])
-
-        suspend(self.testconn)
-
-        w.work(burst=True)
-        assert q.count == 1
-
-        # Should not have created evidence of execution
-        self.assertEqual(os.path.exists(SENTINEL_FILE), False)
-
-        resume(self.testconn)
-        w.work(burst=True)
-        assert q.count == 0
-        self.assertEqual(os.path.exists(SENTINEL_FILE), True)
-
-    @slow
-    def test_suspend_with_duration(self):
-        q = Queue()
-        for _ in range(5):
-            q.enqueue(do_nothing)
-
-        w = Worker([q])
-
-        # This suspends workers for working for 2 second
-        suspend(self.testconn, 2)
-
-        # So when this burst of work happens the queue should remain at 5
-        w.work(burst=True)
-        assert q.count == 5
-
-        sleep(3)
-
-        # The suspension should be expired now, and a burst of work should now clear the queue
-        w.work(burst=True)
-        assert q.count == 0
-
     def test_worker_hash_(self):
         """Workers are hashed by their .name attribute"""
         q = Queue('foo')
@@ -600,40 +532,6 @@ class TestWorker(RQTestCase):
         worker = Worker(queue, connection=self.testconn)
         worker.work(burst=True)
         self.assertEqual(self.testconn.zcard(registry.key), 0)
-
-    def test_job_dependency_race_condition(self):
-        """Dependencies added while the job gets finished shouldn't get lost."""
-
-        # This patches the enqueue_dependents to enqueue a new dependency AFTER
-        # the original code was executed.
-        orig_enqueue_dependents = Queue.enqueue_dependents
-
-        def new_enqueue_dependents(self, job, *args, **kwargs):
-            orig_enqueue_dependents(self, job, *args, **kwargs)
-            if hasattr(Queue, '_add_enqueue') and Queue._add_enqueue is not None and Queue._add_enqueue.id == job.id:
-                Queue._add_enqueue = None
-                Queue().enqueue_call(say_hello, depends_on=job)
-
-        Queue.enqueue_dependents = new_enqueue_dependents
-
-        q = Queue()
-        w = Worker([q])
-        with mock.patch.object(Worker, 'execute_job', wraps=w.execute_job) as mocked:
-            parent_job = q.enqueue(say_hello, result_ttl=0)
-            Queue._add_enqueue = parent_job
-            job = q.enqueue_call(say_hello, depends_on=parent_job)
-            w.work(burst=True)
-            job = Job.fetch(job.id)
-            self.assertEqual(job.get_status(), JobStatus.FINISHED)
-
-            # The created spy checks two issues:
-            # * before the fix of #739, 2 of the 3 jobs where executed due
-            #   to the race condition
-            # * during the development another issue was fixed:
-            #   due to a missing pipeline usage in Queue.enqueue_job, the job
-            #   which was enqueued before the "rollback" was executed twice.
-            #   So before that fix the call count was 4 instead of 3
-            self.assertEqual(mocked.call_count, 3)
 
     def test_self_modification_persistence(self):
         """Make sure that any meta modification done by
@@ -921,7 +819,7 @@ class HerokuWorkerShutdownTestCase(TimeoutTestCase, RQTestCase):
         w = HerokuWorker('foo')
 
         w._horse_pid = 19999
-        w.handle_warm_shutdown_request()        
+        w.handle_warm_shutdown_request()
 
 
 class TestExceptionHandlerMessageEncoding(RQTestCase):

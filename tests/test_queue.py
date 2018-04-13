@@ -7,9 +7,8 @@ from tests.fixtures import (div_by_zero, echo, Number, say_hello,
                             some_calculation)
 
 from rq import get_failed_queue, Queue
-from rq.exceptions import InvalidJobDependency, InvalidJobOperationError
+from rq.exceptions import InvalidJobOperationError
 from rq.job import Job, JobStatus
-from rq.registry import DeferredJobRegistry
 from rq.worker import Worker
 
 
@@ -363,130 +362,6 @@ class TestQueue(RQTestCase):
         """Ensure that an exception is raised if the queue prefix is wrong"""
         key = 'some:weird:prefix:' + 'default'
         self.assertRaises(ValueError, Queue.from_queue_key, key)
-
-    def test_enqueue_dependents(self):
-        """Enqueueing dependent jobs pushes all jobs in the depends set to the queue
-        and removes them from DeferredJobQueue."""
-        q = Queue()
-        parent_job = Job.create(func=say_hello)
-        parent_job.save()
-        job_1 = q.enqueue(say_hello, depends_on=parent_job)
-        job_2 = q.enqueue(say_hello, depends_on=parent_job)
-
-        registry = DeferredJobRegistry(q.name, connection=self.testconn)
-        self.assertEqual(
-            set(registry.get_job_ids()),
-            set([job_1.id, job_2.id])
-        )
-        # After dependents is enqueued, job_1 and job_2 should be in queue
-        self.assertEqual(q.job_ids, [])
-        q.enqueue_dependents(parent_job)
-        self.assertEqual(set(q.job_ids), set([job_2.id, job_1.id]))
-        self.assertFalse(self.testconn.exists(parent_job.dependents_key))
-
-        # DeferredJobRegistry should also be empty
-        self.assertEqual(registry.get_job_ids(), [])
-
-    def test_enqueue_dependents_on_multiple_queues(self):
-        """Enqueueing dependent jobs on multiple queues pushes jobs in the queues
-        and removes them from DeferredJobRegistry for each different queue."""
-        q_1 = Queue("queue_1")
-        q_2 = Queue("queue_2")
-        parent_job = Job.create(func=say_hello)
-        parent_job.save()
-        job_1 = q_1.enqueue(say_hello, depends_on=parent_job)
-        job_2 = q_2.enqueue(say_hello, depends_on=parent_job)
-
-        # Each queue has its own DeferredJobRegistry
-        registry_1 = DeferredJobRegistry(q_1.name, connection=self.testconn)
-        self.assertEqual(
-            set(registry_1.get_job_ids()),
-            set([job_1.id])
-        )
-        registry_2 = DeferredJobRegistry(q_2.name, connection=self.testconn)
-        self.assertEqual(
-            set(registry_2.get_job_ids()),
-            set([job_2.id])
-        )
-
-        # After dependents is enqueued, job_1 on queue_1 and
-        # job_2 should be in queue_2
-        self.assertEqual(q_1.job_ids, [])
-        self.assertEqual(q_2.job_ids, [])
-        q_1.enqueue_dependents(parent_job)
-        q_2.enqueue_dependents(parent_job)
-        self.assertEqual(set(q_1.job_ids), set([job_1.id]))
-        self.assertEqual(set(q_2.job_ids), set([job_2.id]))
-        self.assertFalse(self.testconn.exists(parent_job.dependents_key))
-
-        # DeferredJobRegistry should also be empty
-        self.assertEqual(registry_1.get_job_ids(), [])
-        self.assertEqual(registry_2.get_job_ids(), [])
-
-    def test_enqueue_job_with_dependency(self):
-        """Jobs are enqueued only when their dependencies are finished."""
-        # Job with unfinished dependency is not immediately enqueued
-        parent_job = Job.create(func=say_hello)
-        parent_job.save()
-        q = Queue()
-        job = q.enqueue_call(say_hello, depends_on=parent_job)
-        self.assertEqual(q.job_ids, [])
-        self.assertEqual(job.get_status(), JobStatus.DEFERRED)
-
-        # Jobs dependent on finished jobs are immediately enqueued
-        parent_job.set_status(JobStatus.FINISHED)
-        parent_job.save()
-        job = q.enqueue_call(say_hello, depends_on=parent_job)
-        self.assertEqual(q.job_ids, [job.id])
-        self.assertEqual(job.timeout, Queue.DEFAULT_TIMEOUT)
-        self.assertEqual(job.get_status(), JobStatus.QUEUED)
-
-    def test_enqueue_job_with_dependency_by_id(self):
-        """Can specify job dependency with job object or job id."""
-        parent_job = Job.create(func=say_hello)
-        parent_job.save()
-
-        q = Queue()
-        q.enqueue_call(say_hello, depends_on=parent_job.id)
-        self.assertEqual(q.job_ids, [])
-
-        # Jobs dependent on finished jobs are immediately enqueued
-        parent_job.set_status(JobStatus.FINISHED)
-        parent_job.save()
-        job = q.enqueue_call(say_hello, depends_on=parent_job.id)
-        self.assertEqual(q.job_ids, [job.id])
-        self.assertEqual(job.timeout, Queue.DEFAULT_TIMEOUT)
-
-    def test_enqueue_job_with_dependency_and_timeout(self):
-        """Jobs remember their timeout when enqueued as a dependency."""
-        # Job with unfinished dependency is not immediately enqueued
-        parent_job = Job.create(func=say_hello)
-        parent_job.save()
-        q = Queue()
-        job = q.enqueue_call(say_hello, depends_on=parent_job, timeout=123)
-        self.assertEqual(q.job_ids, [])
-        self.assertEqual(job.timeout, 123)
-
-        # Jobs dependent on finished jobs are immediately enqueued
-        parent_job.set_status(JobStatus.FINISHED)
-        parent_job.save()
-        job = q.enqueue_call(say_hello, depends_on=parent_job, timeout=123)
-        self.assertEqual(q.job_ids, [job.id])
-        self.assertEqual(job.timeout, 123)
-
-    def test_enqueue_job_with_invalid_dependency(self):
-        """Enqueuing a job fails, if the dependency does not exist at all."""
-        parent_job = Job.create(func=say_hello)
-        # without save() the job is not visible to others
-
-        q = Queue()
-        with self.assertRaises(InvalidJobDependency):
-            q.enqueue_call(say_hello, depends_on=parent_job)
-
-        with self.assertRaises(InvalidJobDependency):
-            q.enqueue_call(say_hello, depends_on=parent_job.id)
-
-        self.assertEqual(q.job_ids, [])
 
     def test_fetch_job_successful(self):
         """Fetch a job from a queue."""

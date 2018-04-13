@@ -70,28 +70,6 @@ class TestDecorator(RQTestCase):
         result = hello.delay()
         self.assertEqual(result.ttl, 30)
 
-    def test_decorator_accepts_result_depends_on_as_argument(self):
-        """Ensure that passing in depends_on to the decorator sets the
-        correct dependency on the job
-        """
-
-        @job(queue='queue_name')
-        def foo():
-            return 'Firstly'
-
-        @job(queue='queue_name')
-        def bar():
-            return 'Secondly'
-
-        foo_job = foo.delay()
-        bar_job = bar.delay(depends_on=foo_job)
-
-        self.assertIsNone(foo_job._dependency_id)
-
-        self.assertEqual(bar_job.dependency, foo_job)
-
-        self.assertEqual(bar_job._dependency_id, foo_job.id)
-
     @mock.patch('rq.queue.resolve_connection')
     def test_decorator_connection_laziness(self, resolve_connection):
         """Ensure that job decorator resolve connection in `lazy` way """

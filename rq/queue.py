@@ -9,15 +9,14 @@ from redis import WatchError
 from .compat import as_text, string_types, total_ordering
 from .connections import resolve_connection
 from .defaults import DEFAULT_RESULT_TTL
-from .exceptions import (DequeueTimeout, InvalidJobDependency,
-                         InvalidJobOperationError, NoSuchJobError, UnpickleError)
+from .exceptions import (DequeueTimeout, InvalidJobOperationError, NoSuchJobError, UnpickleError)
 from .job import Job, JobStatus
-from .utils import backend_class, import_attribute, utcnow, parse_timeout
+from .utils import backend_class, utcnow, parse_timeout
 
 
-def get_failed_queue(connection=None, job_class=None):
+def get_failed_queue():
     """Returns a handle to the special failed queue."""
-    return FailedQueue(connection=connection, job_class=job_class)
+    return FailedQueue()
 
 
 def compact(lst):
@@ -26,57 +25,41 @@ def compact(lst):
 
 @total_ordering
 class Queue(object):
-    job_class = Job
     DEFAULT_TIMEOUT = 180  # Default timeout seconds.
     redis_queue_namespace_prefix = 'rq:queue:'
     redis_queues_keys = 'rq:queues'
 
     @classmethod
-    def all(cls, connection=None, job_class=None):
-        """Returns an iterable of all Queues.
-        """
-        connection = resolve_connection(connection)
+    def all(cls):
+        """Returns an iterable of all Queues."""
+        connection = resolve_connection()
 
-        def to_queue(queue_key):
-            return cls.from_queue_key(as_text(queue_key),
-                                      connection=connection,
-                                      job_class=job_class)
-        return [to_queue(rq_key)
+        return [cls.from_queue_key(rq_key.decode())
                 for rq_key in connection.smembers(cls.redis_queues_keys)
                 if rq_key]
 
     @classmethod
-    def from_queue_key(cls, queue_key, connection=None, job_class=None):
-        """Returns a Queue instance, based on the naming conventions for naming
-        the internal Redis keys.  Can be used to reverse-lookup Queues by their
-        Redis keys.
-        """
+    def from_queue_key(cls, queue_key):
         prefix = cls.redis_queue_namespace_prefix
         if not queue_key.startswith(prefix):
             raise ValueError('Not a valid RQ queue key: {0}'.format(queue_key))
         name = queue_key[len(prefix):]
-        return cls(name, connection=connection, job_class=job_class)
+        return cls(name)
 
-    def __init__(self, name='default', default_timeout=None, connection=None,
-                 async=True, job_class=None):
-        self.connection = resolve_connection(connection)
+    def __init__(self, name='default', async=True):
+        self.connection = resolve_connection()
         prefix = self.redis_queue_namespace_prefix
         self.name = name
         self._key = '{0}{1}'.format(prefix, name)
-        self._default_timeout = parse_timeout(default_timeout)
         self._async = async
 
-        # override class attribute job_class if one was passed
-        if job_class is not None:
-            if isinstance(job_class, string_types):
-                job_class = import_attribute(job_class)
-            self.job_class = job_class
+    @property
+    def count(self):
+        """Returns a count of all messages in the queue."""
+        return self.connection.llen(self.key)
 
     def __len__(self):
         return self.count
-
-    def __iter__(self):
-        yield self
 
     @property
     def key(self):
@@ -97,7 +80,6 @@ class Queue(object):
 
                 -- Delete the relevant keys
                 redis.call("del", prefix..job_id)
-                redis.call("del", prefix..job_id..":dependents")
                 count = count + 1
             end
             return count
@@ -111,11 +93,11 @@ class Queue(object):
 
     def fetch_job(self, job_id):
         try:
-            job = self.job_class.fetch(job_id, connection=self.connection)
+            job = Job.fetch(job_id, connection=self.connection)
         except NoSuchJobError:
             self.remove(job_id)
         else:
-            if job.origin == self.name or (job.is_failed and self == get_failed_queue(connection=self.connection)):
+            if job.origin == self.name or (job.is_failed and self == get_failed_queue()):
                 return job
 
     def get_job_ids(self, offset=0, length=-1):
@@ -143,14 +125,9 @@ class Queue(object):
         """Returns a list of all (valid) jobs in the queue."""
         return self.get_jobs()
 
-    @property
-    def count(self):
-        """Returns a count of all messages in the queue."""
-        return self.connection.llen(self.key)
-
     def remove(self, job_or_id, pipeline=None):
         """Removes Job from queue, accepts either a Job instance or ID."""
-        job_id = job_or_id.id if isinstance(job_or_id, self.job_class) else job_or_id
+        job_id = job_or_id.id if isinstance(job_or_id, Job) else job_or_id
 
         if pipeline is not None:
             pipeline.lrem(self.key, 1, job_id)
@@ -160,8 +137,7 @@ class Queue(object):
 
     def compact(self):
         """Removes all "dead" jobs from the queue by cycling through it, while
-        guaranteeing FIFO semantics.
-        """
+        guaranteeing FIFO semantics."""
         COMPACT_QUEUE = 'rq:queue:_compact:{0}'.format(uuid.uuid4())
 
         self.connection.rename(self.key, COMPACT_QUEUE)
@@ -169,7 +145,7 @@ class Queue(object):
             job_id = as_text(self.connection.lpop(COMPACT_QUEUE))
             if job_id is None:
                 break
-            if self.job_class.exists(job_id, self.connection):
+            if Job.exists(job_id):
                 self.connection.rpush(self.key, job_id)
 
     def push_job_id(self, job_id, pipeline=None, at_front=False):
@@ -183,7 +159,7 @@ class Queue(object):
 
     def enqueue_call(self, func, args=None, kwargs=None, timeout=None,
                      result_ttl=None, ttl=None, description=None,
-                     depends_on=None, job_id=None, at_front=False, meta=None,
+                     job_id=None, at_front=False, meta=None,
                      reentrant=None):
         """Creates a job to represent the delayed function call and enqueues
         it.
@@ -196,42 +172,12 @@ class Queue(object):
         result_ttl = parse_timeout(result_ttl)
         ttl = parse_timeout(ttl)
 
-        job = self.job_class.create(
-            func, args=args, kwargs=kwargs, connection=self.connection,
+        job = Job.create(
+            func, args=args, kwargs=kwargs,
             result_ttl=result_ttl, ttl=ttl, status=JobStatus.QUEUED,
-            description=description, depends_on=depends_on,
+            description=description,
             timeout=timeout, id=job_id, origin=self.name, meta=meta,
             reentrant=reentrant)
-
-        # If job depends on an unfinished job, register itself on it's
-        # parent's dependents instead of enqueueing it.
-        # If WatchError is raised in the process, that means something else is
-        # modifying the dependency. In this case we simply retry
-        if depends_on is not None:
-            if not isinstance(depends_on, self.job_class):
-                depends_on = self.job_class(id=depends_on,
-                                            connection=self.connection)
-            with self.connection._pipeline() as pipe:
-                while True:
-                    try:
-                        pipe.watch(depends_on.key)
-
-                        # If the dependency does not exist, raise an
-                        # exception to avoid creating an orphaned job.
-                        if not self.job_class.exists(depends_on.id,
-                                                     self.connection):
-                            raise InvalidJobDependency('Job {0} does not exist'.format(depends_on.id))
-
-                        if depends_on.get_status() != JobStatus.FINISHED:
-                            pipe.multi()
-                            job.set_status(JobStatus.DEFERRED)
-                            job.register_dependency(pipeline=pipe)
-                            job.save(pipeline=pipe)
-                            pipe.execute()
-                            return job
-                        break
-                    except WatchError:
-                        continue
 
         job = self.enqueue_job(job, at_front=at_front)
 
@@ -244,7 +190,9 @@ class Queue(object):
         job.cleanup(DEFAULT_RESULT_TTL)
         return job
 
-    def enqueue(self, f, *args, **kwargs):
+    def enqueue(self, f, *args, timeout=None, description=None, result_ttl=None,
+                ttl=None, job_id=None, at_front=False, meta=None, reentrant=None,
+                **kwargs):
         """Creates a job to represent the delayed function call and enqueues
         it.
 
@@ -262,18 +210,7 @@ class Queue(object):
             raise ValueError('Functions from the __main__ module cannot be processed '
                              'by workers')
 
-        # Detect explicit invocations, i.e. of the form:
-        #     q.enqueue(foo, args=(1, 2), kwargs={'a': 1}, timeout=30)
-        timeout = kwargs.pop('timeout', None)
-        description = kwargs.pop('description', None)
-        result_ttl = kwargs.pop('result_ttl', None)
-        ttl = kwargs.pop('ttl', None)
-        depends_on = kwargs.pop('depends_on', None)
-        job_id = kwargs.pop('job_id', None)
-        at_front = kwargs.pop('at_front', False)
-        meta = kwargs.pop('meta', None)
-        reentrant = kwargs.pop('reentrant', None)
-
+        # TODO: remove?
         if 'args' in kwargs or 'kwargs' in kwargs:
             assert args == (), 'Extra positional arguments cannot be used when using explicit args and kwargs'  # noqa
             args = kwargs.pop('args', None)
@@ -281,7 +218,7 @@ class Queue(object):
 
         return self.enqueue_call(func=f, args=args, kwargs=kwargs,
                                  timeout=timeout, result_ttl=result_ttl, ttl=ttl,
-                                 description=description, depends_on=depends_on,
+                                 description=description,
                                  job_id=job_id, at_front=at_front, meta=meta,
                                  reentrant=reentrant)
 
@@ -314,62 +251,12 @@ class Queue(object):
 
         return job
 
-    def enqueue_dependents(self, job, pipeline=None):
-        """Enqueues all jobs in the given job's dependents set and clears it.
-
-        When called without a pipeline, this method uses WATCH/MULTI/EXEC.
-        If you pass a pipeline, only MULTI is called. The rest is up to the
-        caller.
-        """
-        from .registry import DeferredJobRegistry
-
-        pipe = pipeline if pipeline is not None else self.connection._pipeline()
-        dependents_key = job.dependents_key
-
-        while True:
-            try:
-                # if a pipeline is passed, the caller is responsible for calling WATCH
-                # to ensure all jobs are enqueued
-                if pipeline is None:
-                    pipe.watch(dependents_key)
-
-                dependent_jobs = [self.job_class.fetch(as_text(job_id), connection=self.connection)
-                                  for job_id in pipe.smembers(dependents_key)]
-
-                pipe.multi()
-
-                for dependent in dependent_jobs:
-                    registry = DeferredJobRegistry(dependent.origin,
-                                                   self.connection,
-                                                   job_class=self.job_class)
-                    registry.remove(dependent, pipeline=pipe)
-                    if dependent.origin == self.name:
-                        self.enqueue_job(dependent, pipeline=pipe)
-                    else:
-                        queue = Queue(name=dependent.origin, connection=self.connection)
-                        queue.enqueue_job(dependent, pipeline=pipe)
-
-                pipe.delete(dependents_key)
-
-                if pipeline is None:
-                    pipe.execute()
-
-                break
-            except WatchError:
-                if pipeline is None:
-                    continue
-                else:
-                    # if the pipeline comes from the caller, we re-raise the
-                    # exception as it it the responsibility of the caller to
-                    # handle it
-                    raise
-
     def pop_job_id(self):
         """Pops a given job ID from this Redis queue."""
         return as_text(self.connection.lpop(self.key))
 
     @classmethod
-    def lpop(cls, queue_keys, timeout, connection=None):
+    def lpop(cls, queue_keys, timeout):
         """Helper method.  Intermediate method to abstract away from some
         Redis API details, where LPOP accepts only a single key, whereas BLPOP
         accepts multiple.  So if we want the non-blocking LPOP, we need to
@@ -382,7 +269,7 @@ class Queue(object):
             None - non-blocking (return immediately)
              > 0 - maximum number of seconds to block
         """
-        connection = resolve_connection(connection)
+        connection = resolve_connection()
         if timeout is not None:  # blocking variant
             if timeout == 0:
                 raise ValueError('RQ does not support indefinite timeouts. Please pick a timeout value > 0')
@@ -401,14 +288,14 @@ class Queue(object):
     def dequeue(self):
         """Dequeues the front-most job from this queue.
 
-        Returns a job_class instance, which can be executed or inspected.
+        Returns a Job instance, which can be executed or inspected.
         """
         while True:
             job_id = self.pop_job_id()
             if job_id is None:
                 return None
             try:
-                job = self.job_class.fetch(job_id, connection=self.connection)
+                job = Job.fetch(job_id)
             except NoSuchJobError as e:
                 # Silently pass on jobs that don't exist (anymore),
                 continue
@@ -421,8 +308,8 @@ class Queue(object):
             return job
 
     @classmethod
-    def dequeue_any(cls, queues, timeout, connection=None, job_class=None):
-        """Class method returning the job_class instance at the front of the given
+    def dequeue_any(cls, queues, timeout):
+        """Class method returning the Job instance at the front of the given
         set of Queues, where the order of the queues is important.
 
         When all of the Queues are empty, depending on the `timeout` argument,
@@ -432,19 +319,15 @@ class Queue(object):
 
         See the documentation of cls.lpop for the interpretation of timeout.
         """
-        job_class = backend_class(cls, 'job_class', override=job_class)
-
         while True:
             queue_keys = [q.key for q in queues]
-            result = cls.lpop(queue_keys, timeout, connection=connection)
+            result = cls.lpop(queue_keys, timeout)
             if result is None:
                 return None
             queue_key, job_id = map(as_text, result)
-            queue = cls.from_queue_key(queue_key,
-                                       connection=connection,
-                                       job_class=job_class)
+            queue = cls.from_queue_key(queue_key)
             try:
-                job = job_class.fetch(job_id, connection=connection)
+                job = Job.fetch(job_id)
             except NoSuchJobError:
                 # Silently pass on jobs that don't exist (anymore),
                 # and continue in the look
@@ -481,10 +364,8 @@ class Queue(object):
 
 
 class FailedQueue(Queue):
-    def __init__(self, connection=None, job_class=None):
-        super(FailedQueue, self).__init__(JobStatus.FAILED,
-                                          connection=connection,
-                                          job_class=job_class)
+    def __init__(self):
+        super(FailedQueue, self).__init__(JobStatus.FAILED)
 
     def quarantine(self, job, exc_info):
         """Puts the given Job in quarantine (i.e. put it on the failed
@@ -507,7 +388,7 @@ class FailedQueue(Queue):
     def requeue(self, job_id):
         """Requeues the job with the given job ID."""
         try:
-            job = self.job_class.fetch(job_id, connection=self.connection)
+            job = Job.fetch(job_id)
         except NoSuchJobError:
             # Silently ignore/remove this job and return (i.e. do nothing)
             self.remove(job_id)
@@ -519,7 +400,5 @@ class FailedQueue(Queue):
 
         job.set_status(JobStatus.QUEUED)
         job.exc_info = None
-        queue = Queue(job.origin,
-                      connection=self.connection,
-                      job_class=self.job_class)
+        queue = Queue(job.origin)
         return queue.enqueue_job(job)

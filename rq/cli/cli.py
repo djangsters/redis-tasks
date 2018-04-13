@@ -21,8 +21,6 @@ from rq.defaults import (DEFAULT_CONNECTION_CLASS, DEFAULT_JOB_CLASS,
                          DEFAULT_QUEUE_CLASS, DEFAULT_WORKER_CLASS)
 from rq.exceptions import InvalidJobOperationError
 from rq.utils import import_attribute
-from rq.suspension import (suspend as connection_suspend,
-                           resume as connection_resume, is_suspended)
 
 
 # Disable the warning that Click displays (as of Click version 5.0) when users
@@ -207,10 +205,6 @@ def worker(cli_config, burst, name, path, results_ttl,
         for h in exception_handler:
             exception_handlers.append(import_attribute(h))
 
-        if is_suspended(cli_config.connection):
-            click.secho('RQ is currently suspended, to resume job execution run "rq resume"', fg='red')
-            sys.exit(1)
-
         queues = [cli_config.queue_class(queue,
                                          connection=cli_config.connection,
                                          job_class=cli_config.job_class)
@@ -236,31 +230,3 @@ def worker(cli_config, burst, name, path, results_ttl,
     except ConnectionError as e:
         print(e)
         sys.exit(1)
-
-
-@main.command()
-@click.option('--duration', help='Seconds you want the workers to be suspended.  Default is forever.', type=int)
-@pass_cli_config
-def suspend(cli_config, duration, **options):
-    """Suspends all workers, to resume run `rq resume`"""
-
-    if duration is not None and duration < 1:
-        click.echo("Duration must be an integer greater than 1")
-        sys.exit(1)
-
-    connection_suspend(cli_config.connection, duration)
-
-    if duration:
-        msg = """Suspending workers for {0} seconds.  No new jobs will be started during that time, but then will
-        automatically resume""".format(duration)
-        click.echo(msg)
-    else:
-        click.echo("Suspending workers.  No new jobs will be started.  But current jobs will be completed")
-
-
-@main.command()
-@pass_cli_config
-def resume(cli_config, **options):
-    """Resumes processing of queues, that where suspended with `rq suspend`"""
-    connection_resume(cli_config.connection)
-    click.echo("Resuming workers.")

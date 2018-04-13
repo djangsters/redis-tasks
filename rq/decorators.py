@@ -44,11 +44,9 @@ class job(object):
                                          connection=self.connection)
             else:
                 queue = self.queue
-            depends_on = kwargs.pop('depends_on', None)
             return queue.enqueue_call(f, args=args, kwargs=kwargs,
                                       timeout=self.timeout, result_ttl=self.result_ttl,
-                                      ttl=self.ttl, depends_on=depends_on,
-                                      reentrant=self.reentrant)
+                                      ttl=self.ttl, reentrant=self.reentrant)
         f.delay = delay
         return f
 

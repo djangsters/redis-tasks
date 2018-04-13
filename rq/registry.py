@@ -121,19 +121,6 @@ class FinishedJobRegistry(BaseRegistry):
         self.connection.zremrangebyscore(self.key, 0, score)
 
 
-class DeferredJobRegistry(BaseRegistry):
-    """
-    Registry of deferred jobs (waiting for another job to finish).
-    """
-    key_template = 'rq:deferred:{0}'
-
-    def cleanup(self):
-        """This method is only here to prevent errors because this method is
-        automatically called by `count()` and `get_job_ids()` methods
-        implemented in BaseRegistry."""
-        pass
-
-
 def clean_registries(queue):
     """Cleans StartedJobRegistry and FinishedJobRegistry of a queue."""
     registry = FinishedJobRegistry(name=queue.name,

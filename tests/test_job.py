@@ -12,7 +12,6 @@ from rq.compat import PY2, as_text
 from rq.exceptions import NoSuchJobError, UnpickleError
 from rq.job import Job, get_current_job, JobStatus, cancel_job, requeue_job
 from rq.queue import Queue, get_failed_queue
-from rq.registry import DeferredJobRegistry
 from rq.utils import utcformat
 from rq.worker import Worker
 
@@ -195,22 +194,6 @@ class TestJob(RQTestCase):
         self.assertEqual(
             sorted(self.testconn.hkeys(job.key)),
             [b'created_at', b'data', b'description'])
-
-    def test_persistence_of_parent_job(self):
-        """Storing jobs with parent job, either instance or key."""
-        parent_job = Job.create(func=fixtures.some_calculation)
-        parent_job.save()
-        job = Job.create(func=fixtures.some_calculation, depends_on=parent_job)
-        job.save()
-        stored_job = Job.fetch(job.id)
-        self.assertEqual(stored_job._dependency_id, parent_job.id)
-        self.assertEqual(stored_job.dependency, parent_job)
-
-        job = Job.create(func=fixtures.some_calculation, depends_on=parent_job.id)
-        job.save()
-        stored_job = Job.fetch(job.id)
-        self.assertEqual(stored_job._dependency_id, parent_job.id)
-        self.assertEqual(stored_job.dependency, parent_job)
 
     def test_store_then_fetch(self):
         """Store, then fetch."""
@@ -408,14 +391,11 @@ class TestJob(RQTestCase):
         self.assertRaises(NoSuchJobError, Job.fetch, job.id, self.testconn)
 
     def test_delete(self):
-        """job.delete() deletes itself & dependents mapping from Redis."""
+        """job.delete() deletes itself from Redis."""
         queue = Queue(connection=self.testconn)
         job = queue.enqueue(fixtures.say_hello)
-        job2 = Job.create(func=fixtures.say_hello, depends_on=job)
-        job2.register_dependency()
         job.delete()
         self.assertFalse(self.testconn.exists(job.key))
-        self.assertFalse(self.testconn.exists(job.dependents_key))
 
         self.assertNotIn(job.id, queue.get_job_ids())
 

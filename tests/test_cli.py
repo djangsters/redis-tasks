@@ -147,38 +147,3 @@ class TestRQCli(RQTestCase):
         runner.invoke(main, ['worker', '-u', self.redis_url, '-b',
                              '--exception-handler', 'tests.fixtures.black_hole'])
         self.assertEqual(failed_q.count, 1)
-
-    def test_suspend_and_resume(self):
-        """rq suspend -u <url>
-           rq worker -u <url> -b
-           rq resume -u <url>
-        """
-        runner = CliRunner()
-        result = runner.invoke(main, ['suspend', '-u', self.redis_url])
-        self.assert_normal_execution(result)
-
-        result = runner.invoke(main, ['worker', '-u', self.redis_url, '-b'])
-        self.assertEqual(result.exit_code, 1)
-        self.assertEqual(
-            result.output.strip(),
-            'RQ is currently suspended, to resume job execution run "rq resume"'
-        )
-
-        result = runner.invoke(main, ['resume', '-u', self.redis_url])
-        self.assert_normal_execution(result)
-
-    def test_suspend_with_ttl(self):
-        """rq suspend -u <url> --duration=2
-        """
-        runner = CliRunner()
-        result = runner.invoke(main, ['suspend', '-u', self.redis_url, '--duration', 1])
-        self.assert_normal_execution(result)
-
-    def test_suspend_with_invalid_ttl(self):
-        """rq suspend -u <url> --duration=0
-        """
-        runner = CliRunner()
-        result = runner.invoke(main, ['suspend', '-u', self.redis_url, '--duration', 0])
-
-        self.assertEqual(result.exit_code, 1)
-        self.assertIn("Duration must be an integer greater than 1", result.output)

@@ -6,8 +6,7 @@ from rq.job import Job, JobStatus
 from rq.queue import FailedQueue, Queue
 from rq.utils import current_timestamp
 from rq.worker import Worker
-from rq.registry import (clean_registries, DeferredJobRegistry,
-                         FinishedJobRegistry, StartedJobRegistry)
+from rq.registry import (clean_registries, FinishedJobRegistry, StartedJobRegistry)
 
 from tests import RQTestCase
 from tests.fixtures import div_by_zero, say_hello
@@ -194,34 +193,3 @@ class TestFinishedJobRegistry(RQTestCase):
         failed_job = queue.enqueue(div_by_zero)
         worker.perform_job(failed_job, queue)
         self.assertEqual(self.registry.get_job_ids(), [])
-
-
-class TestDeferredRegistry(RQTestCase):
-
-    def setUp(self):
-        super(TestDeferredRegistry, self).setUp()
-        self.registry = DeferredJobRegistry(connection=self.testconn)
-
-    def test_key(self):
-        self.assertEqual(self.registry.key, 'rq:deferred:default')
-
-    def test_add(self):
-        """Adding a job to DeferredJobsRegistry."""
-        job = Job()
-        self.registry.add(job)
-        job_ids = [as_text(job_id) for job_id in
-                   self.testconn.zrange(self.registry.key, 0, -1)]
-        self.assertEqual(job_ids, [job.id])
-
-    def test_register_dependency(self):
-        """Ensure job creation and deletion works properly with DeferredJobRegistry."""
-        queue = Queue(connection=self.testconn)
-        job = queue.enqueue(say_hello)
-        job2 = queue.enqueue(say_hello, depends_on=job)
-
-        registry = DeferredJobRegistry(connection=self.testconn)
-        self.assertEqual(registry.get_job_ids(), [job2.id])
-
-        # When deleted, job removes itself from DeferredJobRegistry
-        job2.delete()
-        self.assertEqual(registry.get_job_ids(), [])
