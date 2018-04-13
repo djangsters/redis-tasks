@@ -8,17 +8,12 @@ import time
 from tests import fixtures, RQTestCase
 from tests.helpers import strip_microseconds
 
-from rq.compat import PY2, as_text
-from rq.exceptions import NoSuchJobError, UnpickleError
+from rq.exceptions import NoSuchJobError, DeserializationError
 from rq.job import Job, get_current_job, JobStatus, cancel_job, requeue_job
 from rq.queue import Queue, get_failed_queue
 from rq.utils import utcformat
+from rq.serialization import deserialize, serialize
 from rq.worker import Worker
-
-try:
-    from cPickle import loads, dumps
-except ImportError:
-    from pickle import loads, dumps
 
 
 class TestJob(RQTestCase):
@@ -30,12 +25,7 @@ class TestJob(RQTestCase):
             kwargs=dict(snowman="☃", null=None),
         )
 
-        if not PY2:
-            # Python 3
-            expected_string = "myfunc(12, '☃', null=None, snowman='☃')"
-        else:
-            # Python 2
-            expected_string = u"myfunc(12, u'\\u2603', null=None, snowman=u'\\u2603')".decode('utf-8')
+        expected_string = "myfunc(12, '☃', null=None, snowman='☃')"
 
         self.assertEqual(
             job.description,
@@ -126,7 +116,7 @@ class TestJob(RQTestCase):
         """Data property gets derived from the job tuple."""
         job = Job()
         job.func_name = 'foo'
-        fname, instance, args, kwargs = loads(job.data)
+        fname, instance, args, kwargs = deserialize(job.data)
 
         self.assertEqual(fname, job.func_name)
         self.assertEqual(instance, None)
@@ -136,7 +126,7 @@ class TestJob(RQTestCase):
     def test_data_property_sets_job_properties(self):
         """Job tuple gets derived lazily from data property."""
         job = Job()
-        job.data = dumps(('foo', None, (1, 2, 3), {'bar': 'qux'}))
+        job.data = serialize(('foo', None, (1, 2, 3), {'bar': 'qux'}))
 
         self.assertEqual(job.func_name, 'foo')
         self.assertEqual(job.instance, None)
@@ -153,7 +143,7 @@ class TestJob(RQTestCase):
         self.assertEqual(self.testconn.type(job.key), b'hash')
 
         # Saving writes pickled job data
-        unpickled_data = loads(self.testconn.hget(job.key, 'data'))
+        unpickled_data = deserialize(self.testconn.hget(job.key, 'data'))
         self.assertEqual(unpickled_data[0], 'tests.fixtures.some_calculation')
 
     def test_fetch(self):
@@ -224,7 +214,7 @@ class TestJob(RQTestCase):
         job.refresh()
 
         for attr in ('func_name', 'instance', 'args', 'kwargs'):
-            with self.assertRaises(UnpickleError):
+            with self.assertRaises(DeserializationError):
                 getattr(job, attr)
 
     def test_job_is_unimportable(self):
@@ -250,7 +240,7 @@ class TestJob(RQTestCase):
         job.save()
 
         raw_data = self.testconn.hget(job.key, 'meta')
-        self.assertEqual(loads(raw_data)['foo'], 'bar')
+        self.assertEqual(deserialize(raw_data)['foo'], 'bar')
 
         job2 = Job.fetch(job.id)
         self.assertEqual(job2.meta['foo'], 'bar')
@@ -265,7 +255,7 @@ class TestJob(RQTestCase):
         job.save_meta()
 
         raw_meta = self.testconn.hget(job.key, 'meta')
-        self.assertEqual(loads(raw_meta)['foo'], 'bar')
+        self.assertEqual(deserialize(raw_meta)['foo'], 'bar')
 
         job2 = Job.fetch(job.id)
         self.assertEqual(job2.meta['foo'], 'bar')
@@ -298,10 +288,7 @@ class TestJob(RQTestCase):
         job = Job.create(func=fixtures.say_hello, args=('Lionel',))
         job.save()
         Job.fetch(job.id, connection=self.testconn)
-        if PY2:
-            self.assertEqual(job.description, "tests.fixtures.say_hello(u'Lionel')")
-        else:
-            self.assertEqual(job.description, "tests.fixtures.say_hello('Lionel')")
+        self.assertEqual(job.description, "tests.fixtures.say_hello('Lionel')")
 
     def test_job_access_outside_job_fails(self):
         """The current job is accessible only within a job context."""

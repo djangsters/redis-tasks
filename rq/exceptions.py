@@ -11,9 +11,9 @@ class InvalidJobOperationError(Exception):
     pass
 
 
-class UnpickleError(Exception):
-    def __init__(self, message, raw_data, inner_exception=None):
-        super(UnpickleError, self).__init__(message, inner_exception)
+class DeserializationError(Exception):
+    def __init__(self, message, raw_data):
+        super().__init__(message)
         self.raw_data = raw_data
 
 

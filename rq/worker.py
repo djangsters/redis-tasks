@@ -694,8 +694,8 @@ class Worker(object):
 
             job.ended_at = utcnow()
 
-            # Pickle the result in the same try-except block since we need
-            # to use the same exc handling when pickling fails
+            # Serialize the result in the same try-except block since we need
+            # to use the same exc handling when serialization fails
             job._result = rv
 
             self.handle_job_success(job=job,

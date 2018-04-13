@@ -3,26 +3,15 @@ from __future__ import (absolute_import, division, print_function,
                         unicode_literals)
 
 import inspect
-from functools import partial
 from uuid import uuid4
 
 from rq.compat import as_text, decode_redis_hash, string_types
 
 from .connections import resolve_connection
-from .exceptions import NoSuchJobError, UnpickleError
+from .exceptions import NoSuchJobError
 from .local import LocalStack
 from .utils import enum, import_attribute, utcformat, utcnow, utcparse
-
-try:
-    import cPickle as pickle
-except ImportError:  # noqa  # pragma: no cover
-    import pickle
-
-# Serialize pickle dumps using the highest pickle protocol (binary, default
-# uses ascii)
-dumps = partial(pickle.dumps, protocol=pickle.HIGHEST_PROTOCOL)
-loads = pickle.loads
-
+from .serialization import serialize, deserialize
 
 JobStatus = enum(
     'JobStatus',
@@ -35,21 +24,6 @@ JobStatus = enum(
 # Sentinel value to mark that some of our lazily evaluated properties have not
 # yet been evaluated.
 UNEVALUATED = object()
-
-
-def unpickle(pickled_string):
-    """Unpickles a string, but raises a unified UnpickleError in case anything
-    fails.
-
-    This is a helper method to not have to deal with the fact that `loads()`
-    potentially raises many types of exceptions (e.g. AttributeError,
-    IndexError, TypeError, KeyError, etc.)
-    """
-    try:
-        obj = loads(pickled_string)
-    except Exception as e:
-        raise UnpickleError('Could not unpickle', pickled_string, e)
-    return obj
 
 
 def cancel_job(job_id):
@@ -96,17 +70,14 @@ class Job(object):
             job.origin = origin
 
         # Set the core job tuple properties
-        job._instance = None
-        if inspect.ismethod(func):
-            job._instance = func.__self__
-            job._func_name = func.__name__
-        elif inspect.isfunction(func) or inspect.isbuiltin(func):
+        if inspect.isfunction(func) or inspect.isbuiltin(func):
             job._func_name = '{0}.{1}'.format(func.__module__, func.__name__)
         elif isinstance(func, string_types):
             job._func_name = as_text(func)
-        elif not inspect.isclass(func) and hasattr(func, '__call__'):  # a callable class instance
-            job._instance = func
-            job._func_name = '__call__'
+        elif not inspect.isclass(func) and hasattr(func, '__call__'):
+            raise TypeError('Callable non-functions are not allowed as job targets')
+        elif inspect.ismethod(func):
+            raise TypeError('Instance methods are not allowed as job targets')
         else:
             raise TypeError('Expected a callable or a string, but got: {0}'.format(func))
         job._args = args
@@ -153,13 +124,10 @@ class Job(object):
         if func_name is None:
             return None
 
-        if self.instance:
-            return getattr(self.instance, func_name)
-
         return import_attribute(self.func_name)
 
-    def _unpickle_data(self):
-        self._func_name, self._instance, self._args, self._kwargs = unpickle(self.data)
+    def _deserialize_data(self):
+        self._func_name, self._args, self._kwargs = deserialize(self.data)
 
     @property
     def data(self):
@@ -167,31 +135,27 @@ class Job(object):
             if self._func_name is UNEVALUATED:
                 raise ValueError('Cannot build the job data')
 
-            if self._instance is UNEVALUATED:
-                self._instance = None
-
             if self._args is UNEVALUATED:
                 self._args = ()
 
             if self._kwargs is UNEVALUATED:
                 self._kwargs = {}
 
-            job_tuple = self._func_name, self._instance, self._args, self._kwargs
-            self._data = dumps(job_tuple)
+            job_tuple = self._func_name, self._args, self._kwargs
+            self._data = serialize(job_tuple)
         return self._data
 
     @data.setter
     def data(self, value):
         self._data = value
         self._func_name = UNEVALUATED
-        self._instance = UNEVALUATED
         self._args = UNEVALUATED
         self._kwargs = UNEVALUATED
 
     @property
     def func_name(self):
         if self._func_name is UNEVALUATED:
-            self._unpickle_data()
+            self._deserialize_data()
         return self._func_name
 
     @func_name.setter
@@ -200,20 +164,9 @@ class Job(object):
         self._data = UNEVALUATED
 
     @property
-    def instance(self):
-        if self._instance is UNEVALUATED:
-            self._unpickle_data()
-        return self._instance
-
-    @instance.setter
-    def instance(self, value):
-        self._instance = value
-        self._data = UNEVALUATED
-
-    @property
     def args(self):
         if self._args is UNEVALUATED:
-            self._unpickle_data()
+            self._deserialize_data()
         return self._args
 
     @args.setter
@@ -224,7 +177,7 @@ class Job(object):
     @property
     def kwargs(self):
         if self._kwargs is UNEVALUATED:
-            self._unpickle_data()
+            self._deserialize_data()
         return self._kwargs
 
     @kwargs.setter
@@ -250,7 +203,6 @@ class Job(object):
         self.created_at = utcnow()
         self._data = UNEVALUATED
         self._func_name = UNEVALUATED
-        self._instance = UNEVALUATED
         self._args = UNEVALUATED
         self._kwargs = UNEVALUATED
         self.description = None
@@ -308,7 +260,7 @@ class Job(object):
             rv = self.connection.hget(self.key, 'result')
             if rv is not None:
                 # cache the result
-                self._result = loads(rv)
+                self._result = deserialize(rv)
         return self._result
 
     # Persistence
@@ -339,14 +291,14 @@ class Job(object):
         self.enqueued_at = to_date(as_text(obj.get('enqueued_at')))
         self.started_at = to_date(as_text(obj.get('started_at')))
         self.ended_at = to_date(as_text(obj.get('ended_at')))
-        self._result = unpickle(obj.get('result')) if obj.get('result') else None  # noqa
+        self._result = deserialize(obj.get('result')) if obj.get('result') else None  # noqa
         self.exc_info = as_text(obj.get('exc_info'))
         self.timeout = int(obj.get('timeout')) if obj.get('timeout') else None
         self.result_ttl = int(obj.get('result_ttl')) if obj.get('result_ttl') else None  # noqa
         self.reentrant = obj.get('reentrant')
         self._status = as_text(obj.get('status') if obj.get('status') else None)
         self.ttl = int(obj.get('ttl')) if obj.get('ttl') else None
-        self.meta = unpickle(obj.get('meta')) if obj.get('meta') else {}
+        self.meta = deserialize(obj.get('meta')) if obj.get('meta') else {}
 
     def to_dict(self, include_meta=True):
         """Returns a serialization of the current job instance
@@ -368,7 +320,7 @@ class Job(object):
         if self.ended_at is not None:
             obj['ended_at'] = utcformat(self.ended_at)
         if self._result is not None:
-            obj['result'] = dumps(self._result)
+            obj['result'] = serialize(self._result)
         if self.exc_info is not None:
             obj['exc_info'] = self.exc_info
         if self.timeout is not None:
@@ -380,7 +332,7 @@ class Job(object):
         if self._status is not None:
             obj['status'] = self._status
         if self.meta and include_meta:
-            obj['meta'] = dumps(self.meta)
+            obj['meta'] = serialize(self.meta)
         if self.ttl:
             obj['ttl'] = self.ttl
 
@@ -399,7 +351,7 @@ class Job(object):
         self.cleanup(self.ttl, pipeline=connection)
 
     def save_meta(self):
-        meta = dumps(self.meta)
+        meta = serialize(self.meta)
         self.connection.hset(self.key, 'meta', meta)
 
     def cancel(self):
