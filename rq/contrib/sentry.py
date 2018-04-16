@@ -1,21 +1,24 @@
-# -*- coding: utf-8 -*-
-from __future__ import (absolute_import, division, print_function,
-                        unicode_literals)
+from ..worker import TaskMiddleware
 
 
-def register_sentry(client, worker):
-    """Given a Raven client and an RQ worker, registers exception handlers
-    with the worker so exceptions are logged to Sentry.
-    """
-    def send_to_sentry(job, *exc_info):
-        client.captureException(
-            exc_info=exc_info,
-            extra={
-                'job_id': job.id,
-                'func': job.func_name,
-                'args': job.args,
-                'kwargs': job.kwargs,
-                'description': job.description,
-            })
+class SentryMiddleware(TaskMiddleware):
+    def __init__(self, client):
+        self.client = client
 
-    worker.push_exc_handler(send_to_sentry)
+    def start(self, task):
+        self.client.context.activate()
+        self.client.transaction.push(task.func_name)
+
+    def end(self, task, *exc_info):
+        if exc_info and exc_info[0]:
+            self.client.captureException(
+                exc_info=exc_info,
+                extra={
+                    'task_id': task.id,
+                    'func': task.func_name,
+                    'args': task.args,
+                    'kwargs': task.kwargs,
+                    'description': task.description,
+                })
+        self.client.transaction.pop(task.func_name)
+        self.client.context.clear()

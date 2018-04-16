@@ -71,6 +71,51 @@ WorkerStatus = enum(
 )
 
 
+class TaskMiddleware:
+    """Base class for a task execution middleware.
+
+    Before task execution, the `start()` methods are called in the order the
+    middlewares are listen in TODO[setting]. Any middleware can short-circuit
+    this process by returning True or raising an exception in the `start()`
+    method. The following `start()` method will then not be called.
+
+    Independently of whether the task ran or a middleware interupted the startup,
+    all configured middelwares' `end()` methods are called after execution. If
+    the worker running the task did not die and a middleware's `start()` method
+    was called for this task, the `end()` method will be called on the same
+    instance of the middleware. Otherwise a new instance is created.
+
+    The JobAborted exception has a special meaning in this context. It is raised
+    by rq if the job did not fail itself, but was aborted for external reasons.
+    It can also be raised by any middleware. If it is passed through or raised
+    by the outer-most middleware, reentrant tasks will be reenqueued at the
+    front of the queue they came from."""
+
+    def start(self, job):
+        """Is called before the job is started.
+
+        Can return True to stop execution and treat the job as succeeded.
+        Can raise an exception to stop execution and treat the job as failed."""
+        pass
+
+    def end(self, job, exc_type=None, exc_val=None, exc_tb=None):
+        """Is called after job exection.
+
+        If the job failed to succeed, the three exc_ parameters will be set.
+        This can happen for the following reasons:
+        * The job raised an exception
+        * The worker shut down during execution
+        * The worked died unexpectedly during execution
+        * The job reached its timeout
+        * Another middleware raised an exception
+
+        Can return True to treat the job as succeeded.
+        Returning a non-true value (e.g. None), passes the current state on to
+        the next middleware.
+        Raising an exception passes the raised exception to the next middleware."""
+        pass
+
+
 class JobOutcome:
     def __init__(self, outcome, *, error_message=None):
         assert outcome in ['success', 'failure', 'aborted']
@@ -80,17 +125,34 @@ class JobOutcome:
 
 class WorkHorse(multiprocessing.Process):
     def run(self, job, worker_connection):
-        self.worker_connection = worker_connection
         self.setup_work_horse_signals()
+
+        exc_info = []
+        configured_middlewares = []  # TODO: middleware config
         try:
-            # TODO: sentry
-            # Maybe have a configurable job wrapper function
-            job.execute()
-            worker_connection.send(JobOutcome('success'))
-        except ShutDownImminentException:
-            worker_connection.send(JobOutcome('aborted'))
+            for middleware in configured_middlewares:
+                if middleware.start(job):
+                    break
+            else:
+                job.execute()
+        except ShutdownImminentException:
+            _, _, exc_tb = sys.exc_info()
+            exc_info = JobAborted, JobAborted("Worker shutdown")
         except Exception:
             exc_info = sys.exc_info()
+
+        for middleware in reversed(configured_middlewares):
+            try:
+                if middleware.end(job, *exc_info):
+                    exc_info = []
+            except Exception:
+                exc_info = sys.exc_info()
+
+        if not exc_info:
+            worker_connection.send(JobOutcome('success'))
+        elif isinstance(exc_info[1], JobAborted):
+            worker_connection.send(JobOutcome('aborted', message=exc_info[1].message))
+        else:
             exc_string = ''.join(traceback.format_exception(*exc_info))
             worker_connection.send(JobOutcome('failure', error_message=exc_string))
 
