@@ -1,16 +1,14 @@
-# -*- coding: utf-8 -*-
-from __future__ import (absolute_import, division, print_function,
-                        unicode_literals)
-
 import inspect
+import traceback
 from uuid import uuid4
 
-from rq.compat import as_text, decode_redis_hash, string_types
-
 from .connections import resolve_connection
+from .defaults import JOB_TIMEOUT
 from .exceptions import NoSuchJobError
+from .queue import Queue
 from .local import LocalStack
-from .utils import enum, import_attribute, utcformat, utcnow, utcparse
+from .utils import enum, import_attribute, utcformat, utcnow, utcparse, takes_pipeline
+from .registry import running_job_registry, finished_job_registry, failed_job_registry
 from .serialization import serialize, deserialize
 
 JobStatus = enum(
@@ -18,172 +16,127 @@ JobStatus = enum(
     QUEUED='queued',
     FINISHED='finished',
     FAILED='failed',
-    STARTED='started',
+    CANCELED='canceled',
+    RUNNING='running',
 )
-
-# Sentinel value to mark that some of our lazily evaluated properties have not
-# yet been evaluated.
-UNEVALUATED = object()
-
-
-def cancel_job(job_id):
-    Job.fetch(job_id).cancel()
-
-
-def requeue_job(job_id):
-    from .queue import get_failed_queue
-    failed_queue = get_failed_queue()
-    return failed_queue.requeue(job_id)
-
-
-def get_current_job():
-    """Returns the Job instance that is currently being executed.  If this
-    function is invoked from outside a job context, None is returned."""
-    job_id = _job_stack.top
-    if job_id is None:
-        return None
-    return Job.fetch(job_id)
 
 
 class Job(object):
-    # Job construction
-    @classmethod
-    def create(cls, func, args=None, kwargs=None, connection=None,
-               result_ttl=None, ttl=None, status=None, description=None,
-               timeout=None, id=None, origin=None, meta=None,
-               reentrant=None):
+    def __init__(self, func=None, args=None, kwargs=None, *, fetch_id=None,
+                 description=None,
+                 timeout=None, id=None, meta=None,
+                 reentrant=None):
+        self.connection = resolve_connection()
+
+        if fetch_id:
+            self.id = fetch_id
+            self.refresh()
+            return
+
+        self.id = id or str(uuid4())
+
+        if inspect.isfunction(func) or inspect.isbuiltin(func):
+            self.func_name = '{0}.{1}'.format(func.__module__, func.__name__)
+            assert self.func == func
+        elif isinstance(func, str):
+            self.func_name = func
+        else:
+            raise TypeError('Expected a function or string, but got: {0}'.format(func))
+        if self.func_name.startswith('__main__'):
+            raise ValueError("The job's function needs to be importable by the workers")
+
         if args is None:
             args = ()
         if kwargs is None:
             kwargs = {}
-
         if not isinstance(args, (tuple, list)):
-            raise TypeError('{0!r} is not a valid args list'.format(args))
+            raise TypeError(f'{args!r} is not a valid args list')
         if not isinstance(kwargs, dict):
-            raise TypeError('{0!r} is not a valid kwargs dict'.format(kwargs))
+            raise TypeError(f'{kwargs!r} is not a valid kwargs dict')
+        self.args = args
+        self.kwargs = kwargs
 
-        job = cls()
-        if id is not None:
-            job.set_id(id)
+        self.error_message = None
 
-        if origin is not None:
-            job.origin = origin
+        self.description = description or self.get_call_string()
+        self.timeout = timeout or JOB_TIMEOUT
+        self.reentrant = reentrant
+        self.status = None
+        self.origin = None
+        self.meta = meta or {}
 
-        # Set the core job tuple properties
-        if inspect.isfunction(func) or inspect.isbuiltin(func):
-            job._func_name = '{0}.{1}'.format(func.__module__, func.__name__)
-        elif isinstance(func, string_types):
-            job._func_name = as_text(func)
-        elif not inspect.isclass(func) and hasattr(func, '__call__'):
-            raise TypeError('Callable non-functions are not allowed as job targets')
-        elif inspect.ismethod(func):
-            raise TypeError('Instance methods are not allowed as job targets')
+        self.enqueued_at = None
+        self.started_at = None
+        self.ended_at = None
+        self.unfinished_runs = []
+
+    @classmethod
+    def fetch(cls, id):
+        return cls(fetch_id=id)
+
+    @takes_pipeline
+    def enqueue(self, queue, *, pipeline):
+        assert self.status is None
+        self.status = JobStatus.QUEUED
+        self.origin = queue.name
+        self.enqueued_at = utcnow()
+        self._save(pipeline=pipeline)
+        queue.push_job(self, pipeline=pipeline)
+
+    @takes_pipeline
+    def requeue(self, *, pipeline):
+        assert self.status is JobStatus.RUNNING
+        running_job_registry.remove(self, pipeline=pipeline)
+        Queue(self.origin).push_job(self, at_front=True, pipeline=pipeline)
+        self._set_status(JobStatus.QUEUED, pipeline=pipeline)
+        self.unfinshed_runs.append((self.started_at, utcnow()))
+        pipeline.hset(self.key, 'unfinished_runs', serialize(self.unfinished_runs))
+        self.started_at = None
+        pipeline.hdel(self.key, 'started_at')
+
+    @takes_pipeline
+    def set_running(self, worker, *, pipeline):
+        assert self.status == JobStatus.QUEUED
+        running_job_registry.add(self, worker, pipeline=pipeline)
+        self._set_status(JobStatus.RUNNING, pipeline=pipeline)
+        self.started_at = utcnow()
+        pipeline.hset(self.key, 'started_at', utcformat(self.started_at))
+
+    @takes_pipeline
+    def set_finished(self, *, pipeline):
+        assert self.status == JobStatus.RUNNING
+        running_job_registry.remove(self, pipeline=pipeline)
+        finished_job_registry.add(self, pipeline=pipeline)
+        self._set_status(JobStatus.FINISHED, pipeline=pipeline)
+        self.ended_at = utcnow()
+        pipeline.hset(self.key, 'ended_at', utcformat(self.ended_at))
+
+    @takes_pipeline
+    def set_failed(self, error_message, *, pipeline):
+        assert self.status == JobStatus.RUNNING
+        running_job_registry.remove(self, pipeline=pipeline)
+        failed_job_registry.add(self, pipeline=pipeline)
+        self._set_status(JobStatus.FAILED, pipeline=pipeline)
+        self.error_message = error_message
+        pipeline.hset(self.key, 'error_message', self.error_message)
+        self.ended_at = utcnow()
+        pipeline.hset(self.key, 'ended_at', utcformat(self.ended_at))
+
+    @takes_pipeline
+    def handle_abort(self, abort_reason, *, pipeline):
+        if self.reentrant:
+            self.requeue(pipeline=pipeline)
         else:
-            raise TypeError('Expected a callable or a string, but got: {0}'.format(func))
-        job._args = args
-        job._kwargs = kwargs
+            self.set_failed(abort_reason, pipeline=pipeline)
 
-        # Extra meta data
-        job.description = description or job.get_call_string()
-        job.result_ttl = result_ttl
-        job.ttl = ttl
-        job.timeout = timeout
-        job.reentrant = reentrant
-        job._status = status
-        job.meta = meta or {}
-
-        return job
-
-    def get_status(self):
-        self._status = self.connection.hget(self.key, 'status').decode()
-        return self._status
-
-    def set_status(self, status, pipeline=None):
-        self._status = status
-        self.connection._hset(self.key, 'status', self._status, pipeline)
-
-    @property
-    def is_finished(self):
-        return self.get_status() == JobStatus.FINISHED
-
-    @property
-    def is_queued(self):
-        return self.get_status() == JobStatus.QUEUED
-
-    @property
-    def is_failed(self):
-        return self.get_status() == JobStatus.FAILED
-
-    @property
-    def is_started(self):
-        return self.get_status() == JobStatus.STARTED
+    @takes_pipeline
+    def _set_status(self, status, *, pipeline):
+        self.status = status
+        pipeline.hset(self.key, 'status', self.status)
 
     @property
     def func(self):
-        func_name = self.func_name
-        if func_name is None:
-            return None
-
         return import_attribute(self.func_name)
-
-    def _deserialize_data(self):
-        self._func_name, self._args, self._kwargs = deserialize(self.data)
-
-    @property
-    def data(self):
-        if self._data is UNEVALUATED:
-            if self._func_name is UNEVALUATED:
-                raise ValueError('Cannot build the job data')
-
-            if self._args is UNEVALUATED:
-                self._args = ()
-
-            if self._kwargs is UNEVALUATED:
-                self._kwargs = {}
-
-            job_tuple = self._func_name, self._args, self._kwargs
-            self._data = serialize(job_tuple)
-        return self._data
-
-    @data.setter
-    def data(self, value):
-        self._data = value
-        self._func_name = UNEVALUATED
-        self._args = UNEVALUATED
-        self._kwargs = UNEVALUATED
-
-    @property
-    def func_name(self):
-        if self._func_name is UNEVALUATED:
-            self._deserialize_data()
-        return self._func_name
-
-    @func_name.setter
-    def func_name(self, value):
-        self._func_name = value
-        self._data = UNEVALUATED
-
-    @property
-    def args(self):
-        if self._args is UNEVALUATED:
-            self._deserialize_data()
-        return self._args
-
-    @args.setter
-    def args(self, value):
-        self._args = value
-        self._data = UNEVALUATED
-
-    @property
-    def kwargs(self):
-        if self._kwargs is UNEVALUATED:
-            self._deserialize_data()
-        return self._kwargs
-
-    @kwargs.setter
-    def kwargs(self, value):
-        self._kwargs = value
-        self._data = UNEVALUATED
 
     @classmethod
     def exists(cls, job_id):
@@ -192,270 +145,94 @@ class Job(object):
         return conn.exists(cls.key_for(job_id))
 
     @classmethod
-    def fetch(cls, id):
-        job = cls(id)
-        job.refresh()
-        return job
-
-    def __init__(self, id=None, connection=None):
-        self.connection = resolve_connection(connection)
-        self._id = id
-        self.created_at = utcnow()
-        self._data = UNEVALUATED
-        self._func_name = UNEVALUATED
-        self._args = UNEVALUATED
-        self._kwargs = UNEVALUATED
-        self.description = None
-        self.origin = None
-        self.enqueued_at = None
-        self.started_at = None
-        self.ended_at = None
-        self._result = None
-        self.exc_info = None
-        self.timeout = None
-        self.result_ttl = None
-        self.ttl = None
-        self._status = None
-        self.meta = {}
-
-    def __repr__(self):
-        return '{0}({1!r}, enqueued_at={2!r})'.format(
-            self.__class__.__name__, self._id, self.enqueued_at)
-
-    def __str__(self):
-        return '<{0} {1}: {2}>'.format(
-            self.__class__.__name__, self.id, self.description)
-
-    def __eq__(self, other):
-        return isinstance(other, self.__class__) and self.id == other.id
-
-    def __hash__(self):
-        return hash(self.id)
-
-    def get_id(self):
-        """The job ID for this job instance. Generates an ID lazily the
-        first time the ID is requested."""
-        if self._id is None:
-            self._id = str(uuid4())
-        return self._id
-
-    def set_id(self, value):
-        if not isinstance(value, string_types):
-            raise TypeError('id must be a string, not {0}'.format(type(value)))
-        self._id = value
-
-    id = property(get_id, set_id)
-
-    @classmethod
     def key_for(cls, job_id):
-        return b'rq:job:' + job_id.encode('utf-8')
+        return 'rq:job:' + job_id
 
     @property
     def key(self):
         return self.key_for(self.id)
 
-    @property
-    def result(self):
-        if self._result is None:
-            rv = self.connection.hget(self.key, 'result')
-            if rv is not None:
-                # cache the result
-                self._result = deserialize(rv)
-        return self._result
-
-    # Persistence
-    def refresh(self):  # noqa
-        """Overwrite the current instance's properties with the values in the
-        corresponding Redis key.
-
-        Will raise a NoSuchJobError if no corresponding Redis key exists."""
+    def refresh(self):
         key = self.key
-        obj = decode_redis_hash(self.connection.hgetall(key))
+        obj = {k.decode(): v for k, v in self.connection.hgetall(key).items()}
         if len(obj) == 0:
             raise NoSuchJobError('No such job: {0}'.format(key))
 
-        def to_date(date_str):
-            if date_str is None:
-                return
-            else:
-                return utcparse(as_text(date_str))
-
         try:
-            self.data = obj['data']
+            self.func_name = obj['func_name'].decode()
+            self._args = deserialize(obj['args'])
+            self._kwargs = deserialize(obj['kwargs'])
         except KeyError:
             raise NoSuchJobError('Unexpected job format: {0}'.format(obj))
 
-        self.created_at = to_date(as_text(obj.get('created_at')))
-        self.origin = as_text(obj.get('origin'))
-        self.description = as_text(obj.get('description'))
-        self.enqueued_at = to_date(as_text(obj.get('enqueued_at')))
-        self.started_at = to_date(as_text(obj.get('started_at')))
-        self.ended_at = to_date(as_text(obj.get('ended_at')))
-        self._result = deserialize(obj.get('result')) if obj.get('result') else None  # noqa
-        self.exc_info = as_text(obj.get('exc_info'))
-        self.timeout = int(obj.get('timeout')) if obj.get('timeout') else None
-        self.result_ttl = int(obj.get('result_ttl')) if obj.get('result_ttl') else None  # noqa
-        self.reentrant = obj.get('reentrant')
-        self._status = as_text(obj.get('status') if obj.get('status') else None)
-        self.ttl = int(obj.get('ttl')) if obj.get('ttl') else None
-        self.meta = deserialize(obj.get('meta')) if obj.get('meta') else {}
+        for key in ['status', 'origin', 'description', 'error_message']:
+            setattr(self, key, obj[key].decode() if key in obj else None)
 
-    def to_dict(self, include_meta=True):
-        """Returns a serialization of the current job instance
+        for key in ['enqueue_at', 'started_at', 'ended_at']:
+            setattr(self, key, utcparse(obj[key].decode()) if key in obj else None)
 
-        You can exclude serializing the `meta` dictionary by setting
-        `include_meta=False`."""
+        for key in ['timeout']:
+            setattr(self, key, int(obj[key]) if key in obj else None)
+
+        self.reentrant = bool(obj.get('reentrant'))
+        self.meta = deserialize(obj['meta']) if obj.get('meta') else {}
+        self.unfinished_runs = deserialize(obj['unfinished_runs']) if obj.get('unfinished_runs') else []
+
+    @takes_pipeline
+    def _save(self, *, pipeline=None):
+        """Persists the current job instance to its corresponding Redis key."""
         obj = {}
-        obj['created_at'] = utcformat(self.created_at or utcnow())
-        obj['data'] = self.data
+        obj['func_name'] = self.func_name
+        obj['args'] = serialize(self._args)
+        obj['kwargs'] = serialize(self._kwargs)
 
-        if self.origin is not None:
-            obj['origin'] = self.origin
-        if self.description is not None:
-            obj['description'] = self.description
-        if self.enqueued_at is not None:
-            obj['enqueued_at'] = utcformat(self.enqueued_at)
-        if self.started_at is not None:
-            obj['started_at'] = utcformat(self.started_at)
-        if self.ended_at is not None:
-            obj['ended_at'] = utcformat(self.ended_at)
-        if self._result is not None:
-            obj['result'] = serialize(self._result)
-        if self.exc_info is not None:
-            obj['exc_info'] = self.exc_info
-        if self.timeout is not None:
-            obj['timeout'] = self.timeout
-        if self.result_ttl is not None:
-            obj['result_ttl'] = self.result_ttl
+        for key in ['status', 'description', 'origin', 'error_message', 'timeout']:
+            if getattr(self, key) is not None:
+                obj[key] = getattr(self, key)
+
         if self.reentrant is not None:
-            obj['reentrant'] = self.reentrant
-        if self._status is not None:
-            obj['status'] = self._status
-        if self.meta and include_meta:
+            obj['reentrant'] = '' if self.reentrant else '1'
+
+        for key in ['enqueue_at', 'started_at', 'ended_at']:
+            if getattr(self, key) is not None:
+                obj[key] = utcformat(getattr(self, key))
+
+        if self.unfinished_runs:
+            obj['unfinished_runs'] = serialize(self.unfinished_runs)
+        if self.meta:
             obj['meta'] = serialize(self.meta)
-        if self.ttl:
-            obj['ttl'] = self.ttl
 
-        return obj
-
-    def save(self, pipeline=None, include_meta=True):
-        """Persists the current job instance to its corresponding Redis key.
-
-        Exclude persisting the `meta` dictionary by setting
-        `include_meta=False`. This is useful to prevent clobbering
-        user metadata without an expensive `refresh()` call first."""
-        key = self.key
-        connection = pipeline if pipeline is not None else self.connection
-
-        connection.hmset(key, self.to_dict(include_meta=include_meta))
-        self.cleanup(self.ttl, pipeline=connection)
+        pipeline.hmset(self.key, obj)
 
     def save_meta(self):
         meta = serialize(self.meta)
         self.connection.hset(self.key, 'meta', meta)
 
-    def cancel(self):
-        """Cancels the given job, which will prevent the job from ever being
-        ran (or inspected).
-
-        This method merely exists as a high-level API call to cancel jobs
-        without worrying about the internals required to implement job
-        cancellation."""
+    @takes_pipeline
+    def cancel(self, *, pipeline):
+        # TODO: check which state we are in and react accordingly
+        # fail if the job is currently running
         from .queue import Queue
-        # TODO: what is the point of this pipeline?
-        pipeline = self.connection._pipeline()
         if self.origin:
             q = Queue(name=self.origin)
             q.remove(self, pipeline=pipeline)
-        pipeline.execute()
 
-    def delete(self, pipeline=None, remove_from_queue=True):
-        """Cancels the job and deletes the job hash from Redis."""
-        if remove_from_queue:
-            self.cancel()
-        connection = pipeline if pipeline is not None else self.connection
-
-        if self.get_status() == JobStatus.FINISHED:
-            from .registry import FinishedJobRegistry
-            registry = FinishedJobRegistry(self.origin,
-                                           connection=self.connection,
-                                           job_class=self.__class__)
-            registry.remove(self, pipeline=pipeline)
-
-        elif self.get_status() == JobStatus.STARTED:
-            from .registry import StartedJobRegistry
-            registry = StartedJobRegistry(self.origin,
-                                          connection=self.connection,
-                                          job_class=self.__class__)
-            registry.remove(self, pipeline=pipeline)
-
-        elif self.get_status() == JobStatus.FAILED:
-            from .queue import get_failed_queue
-            failed_queue = get_failed_queue(connection=self.connection,
-                                            job_class=self.__class__)
-            failed_queue.remove(self, pipeline=pipeline)
-
-        connection.delete(self.key)
-
-    def perform(self):
-        """Invokes the job function with the job arguments."""
-        self.connection.persist(self.key)
-        self.ttl = -1
-        _job_stack.push(self.id)
-        try:
-            self._result = self._execute()
-        finally:
-            assert self.id == _job_stack.pop()
-        return self._result
-
-    def _execute(self):
+    def execute(self):
         return self.func(*self.args, **self.kwargs)
-
-    def get_ttl(self, default_ttl=None):
-        """Returns ttl for a job that determines how long a job will be
-        persisted. In the future, this method will also be responsible
-        for determining ttl for repeated jobs.
-        """
-        return default_ttl if self.ttl is None else self.ttl
-
-    def get_result_ttl(self, default_ttl=None):
-        """Returns ttl for a job that determines how long a jobs result will
-        be persisted. In the future, this method will also be responsible
-        for determining ttl for repeated jobs.
-        """
-        return default_ttl if self.result_ttl is None else self.result_ttl
 
     def get_call_string(self):
         """Returns a string representation of the call, formatted as a regular
         Python function invocation statement."""
-        if self.func_name is None:
-            return None
-
-        arg_list = [as_text(repr(arg)) for arg in self.args]
-
-        kwargs = ['{0}={1}'.format(k, as_text(repr(v))) for k, v in self.kwargs.items()]
-        # TODO: probably clean this up?
-        # Sort here because python 3.3 & 3.4 makes different call_string
-        arg_list += sorted(kwargs)
+        arg_list = [repr(arg) for arg in self.args]
+        arg_list += [f'{k}={v!r}' for k, v in self.kwargs.items()]
         args = ', '.join(arg_list)
 
         return '{0}({1})'.format(self.func_name, args)
 
-    def cleanup(self, ttl=None, pipeline=None, remove_from_queue=True):
-        """Prepare job for eventual deletion (if needed). This method is usually
-        called after successful execution. How long we persist the job and its
-        result depends on the value of ttl:
-        - If ttl is 0, cleanup the job immediately.
-        - If it's a positive number, set the job to expire in X seconds.
-        - If ttl is negative, don't set an expiry to it (persist
-          forever)"""
-        if ttl == 0:
-            self.delete(pipeline=pipeline, remove_from_queue=remove_from_queue)
-        elif not ttl:
-            return
-        elif ttl > 0:
-            connection = pipeline if pipeline is not None else self.connection
-            connection.expire(self.key, ttl)
+    def __repr__(self):
+        return '{0}({1!r}, enqueued_at={2!r})'.format(
+            self.__class__.__name__, self.id, self.enqueued_at)
 
-
-_job_stack = LocalStack()
+    def __str__(self):
+        return '<{0} {1}: {2}>'.format(
+            self.__class__.__name__, self.id, self.description)

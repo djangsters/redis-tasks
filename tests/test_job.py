@@ -249,7 +249,7 @@ class TestJob(RQTestCase):
         """New meta data can be stored by save_meta."""
         job = Job.create(func=fixtures.say_hello, args=('Lionel',))
         job.save()
-        serialized = job.to_dict()
+        serialized = job._to_dict()
 
         job.meta['foo'] = 'bar'
         job.save_meta()
@@ -261,7 +261,7 @@ class TestJob(RQTestCase):
         self.assertEqual(job2.meta['foo'], 'bar')
 
         # nothing else was changed
-        serialized2 = job2.to_dict()
+        serialized2 = job2._to_dict()
         serialized2.pop('meta')
         self.assertDictEqual(serialized, serialized2)
 

@@ -48,11 +48,11 @@ class TestQueue(RQTestCase):
 
         self.testconn.rpush('rq:queue:example', 'foo')
         self.testconn.rpush('rq:queue:example', 'bar')
-        self.assertEqual(q.is_empty(), False)
+        self.assertEqual(q.count(), 2)
 
         q.empty()
 
-        self.assertEqual(q.is_empty(), True)
+        self.assertEqual(q.count(), 0)
         self.assertIsNone(self.testconn.lpop('rq:queue:example'))
 
     def test_empty_removes_jobs(self):
@@ -62,14 +62,6 @@ class TestQueue(RQTestCase):
         self.assertTrue(Job.exists(job.id))
         q.empty()
         self.assertFalse(Job.exists(job.id))
-
-    def test_queue_is_empty(self):
-        """Detecting empty queues."""
-        q = Queue('example')
-        self.assertEqual(q.is_empty(), True)
-
-        self.testconn.rpush('rq:queue:example', 'sentinel message')
-        self.assertEqual(q.is_empty(), False)
 
     def test_remove(self):
         """Ensure queue.remove properly removes Job from queue."""
@@ -95,26 +87,10 @@ class TestQueue(RQTestCase):
         job.delete()
         self.assertEqual(q.job_ids, [])
 
-    def test_compact(self):
-        """Queue.compact() removes non-existing jobs."""
-        q = Queue()
-
-        q.enqueue(say_hello, 'Alice')
-        q.enqueue(say_hello, 'Charlie')
-        self.testconn.lpush(q.key, '1', '2')
-
-        self.assertEqual(q.count, 4)
-        self.assertEqual(len(q), 4)
-
-        q.compact()
-
-        self.assertEqual(q.count, 2)
-        self.assertEqual(len(q), 2)
-
     def test_enqueue(self):
         """Enqueueing job onto queues."""
         q = Queue()
-        self.assertEqual(q.is_empty(), True)
+        self.assertEqual(q.count(), 0)
 
         # say_hello spec holds which queue this is sent to
         job = q.enqueue(say_hello, 'Nick', foo='bar')
@@ -141,20 +117,6 @@ class TestQueue(RQTestCase):
 
         # Postconditions
         self.assertIsNotNone(job.enqueued_at)
-
-    def test_pop_job_id(self):
-        """Popping job IDs from queues."""
-        # Set up
-        q = Queue()
-        uuid = '112188ae-4e9d-4a5b-a5b3-f26f2cb054da'
-        q.push_job_id(uuid)
-
-        # Pop it off the queue...
-        self.assertEqual(q.count, 1)
-        self.assertEqual(q.pop_job_id(), uuid)
-
-        # ...and assert the queue count when down
-        self.assertEqual(q.count, 0)
 
     def test_dequeue(self):
         """Dequeueing jobs from queues."""

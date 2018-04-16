@@ -69,7 +69,7 @@ class TestRegistry(RQTestCase):
     def test_cleanup(self):
         """Moving expired jobs to FailedQueue."""
         failed_queue = FailedQueue(connection=self.testconn)
-        self.assertTrue(failed_queue.is_empty())
+        self.assertEqual(failed_queue.count(), 0)
 
         queue = Queue(connection=self.testconn)
         job = queue.enqueue(say_hello)

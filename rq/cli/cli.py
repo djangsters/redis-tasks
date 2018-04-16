@@ -12,14 +12,13 @@ import sys
 import click
 from redis.exceptions import ConnectionError
 
-from rq import Connection, get_failed_queue, __version__ as version
+from rq import Connection, __version__ as version
 from rq.cli.helpers import (read_config_file, refresh,
                             setup_loghandlers_from_args,
                             show_both, show_queues, show_workers, CliConfig)
 from rq.contrib.legacy import cleanup_ghosts
 from rq.defaults import (DEFAULT_CONNECTION_CLASS, DEFAULT_JOB_CLASS,
                          DEFAULT_QUEUE_CLASS, DEFAULT_WORKER_CLASS)
-from rq.exceptions import InvalidJobOperationError
 from rq.utils import import_attribute
 
 
@@ -102,36 +101,6 @@ def empty(cli_config, all, queues, **options):
 
 
 @main.command()
-@click.option('--all', '-a', is_flag=True, help='Requeue all failed jobs')
-@click.argument('job_ids', nargs=-1)
-@pass_cli_config
-def requeue(cli_config, all, job_class, job_ids, **options):
-    """Requeue failed jobs."""
-
-    failed_queue = get_failed_queue(connection=cli_config.connection,
-                                    job_class=cli_config.job_class)
-
-    if all:
-        job_ids = failed_queue.job_ids
-
-    if not job_ids:
-        click.echo('Nothing to do')
-        sys.exit(0)
-
-    click.echo('Requeueing {0} jobs from failed queue'.format(len(job_ids)))
-    fail_count = 0
-    with click.progressbar(job_ids) as job_ids:
-        for job_id in job_ids:
-            try:
-                failed_queue.requeue(job_id)
-            except InvalidJobOperationError:
-                fail_count += 1
-
-    if fail_count > 0:
-        click.secho('Unable to requeue {0} jobs from failed queue'.format(fail_count), fg='red')
-
-
-@main.command()
 @click.option('--path', '-P', default='.', help='Specify the import path.')
 @click.option('--interval', '-i', type=float, help='Updates stats every N seconds (default: don\'t poll)')
 @click.option('--raw', '-r', is_flag=True, help='Print only the raw numbers, no bar charts')
@@ -170,7 +139,6 @@ def info(cli_config, path, interval, raw, only_queues, only_workers, by_queue, q
 @click.option('--burst', '-b', is_flag=True, help='Run in burst mode (quit after all work is done)')
 @click.option('--name', '-n', help='Specify a different name')
 @click.option('--path', '-P', default='.', help='Specify the import path.')
-@click.option('--results-ttl', type=int, help='Default results timeout to be used')
 @click.option('--worker-ttl', type=int, help='Default worker timeout to be used')
 @click.option('--verbose', '-v', is_flag=True, help='Show more output')
 @click.option('--quiet', '-q', is_flag=True, help='Show less output')
@@ -213,7 +181,6 @@ def worker(cli_config, burst, name, path, results_ttl,
                                          name=name,
                                          connection=cli_config.connection,
                                          default_worker_ttl=worker_ttl,
-                                         default_result_ttl=results_ttl,
                                          job_class=cli_config.job_class,
                                          queue_class=cli_config.queue_class,
                                          exception_handlers=exception_handlers or None)

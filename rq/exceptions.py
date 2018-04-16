@@ -7,6 +7,10 @@ class NoSuchJobError(Exception):
     pass
 
 
+class NoSuchWorkerError(Exception):
+    pass
+
+
 class InvalidJobOperationError(Exception):
     pass
 
@@ -21,10 +25,13 @@ class DequeueTimeout(Exception):
     pass
 
 
+class JobTimeoutException(Exception):
+    """Raised when a job takes longer to complete than the allowed maximum timeout value."""
+    pass
+
+
 class ShutDownImminentException(BaseException):
-    def __init__(self, msg=None, extra_info=None):
-        self.extra_info = extra_info
-        super(ShutDownImminentException, self).__init__(msg)
+    pass
 
 
 class TimeoutFormatError(Exception):

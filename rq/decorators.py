@@ -6,7 +6,6 @@ from functools import wraps
 
 from rq.compat import string_types
 
-from .defaults import DEFAULT_RESULT_TTL
 from .queue import Queue
 from .utils import backend_class
 
@@ -14,9 +13,7 @@ from .utils import backend_class
 class job(object):
     queue_class = Queue
 
-    def __init__(self, queue, connection=None, timeout=None,
-                 result_ttl=DEFAULT_RESULT_TTL, ttl=None,
-                 queue_class=None, reentrant=False):
+    def __init__(self, queue, connection=None, timeout=None, reentrant=False):
         """A decorator that adds a ``delay`` method to the decorated function,
         which in turn creates a RQ job when called. Accepts a required
         ``queue`` argument that can be either a ``Queue`` instance or a string
@@ -32,8 +29,6 @@ class job(object):
         self.queue_class = backend_class(self, 'queue_class', override=queue_class)
         self.connection = connection
         self.timeout = timeout
-        self.result_ttl = result_ttl
-        self.ttl = ttl
         self.reentrant = reentrant
 
     def __call__(self, f):
@@ -45,8 +40,7 @@ class job(object):
             else:
                 queue = self.queue
             return queue.enqueue_call(f, args=args, kwargs=kwargs,
-                                      timeout=self.timeout, result_ttl=self.result_ttl,
-                                      ttl=self.ttl, reentrant=self.reentrant)
+                                      timeout=self.timeout, reentrant=self.reentrant)
         f.delay = delay
         return f
 
