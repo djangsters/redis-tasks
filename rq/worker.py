@@ -12,11 +12,11 @@ from datetime import timedelta
 from .connections import get_current_connection
 from .defaults import (
     DEAD_WORKER_TTL, WORKER_HEARTBEAT_TIMEOUT, WORKER_HEARTBEAT_FREQ, MAINTENANCE_FREQ)
-from .exceptions import DequeueTimeout, ShutDownImminentException, NoSuchWorkerError
+from .exceptions import DequeueTimeout, ShutdownImminentException, NoSuchWorkerError, JobAborted
 from .job import Job
 from .queue import Queue
 from .registry import expire_registries, worker_registry
-from .utils import enum, utcformat, utcnow, utcparse, takes_pipeline
+from .utils import enum, utcformat, utcnow, utcparse, takes_pipeline, import_attribute
 from .version import VERSION
 
 logger = logging.getLogger(__name__)
@@ -49,7 +49,7 @@ def signal_name(signum):
 
 @contextmanager
 def critical_section():
-    # TODO: _local should not be thread-local!
+    # TODO: _local should not be thread-local
     if not hasattr(_local, 'critical_section'):
         _local.critical_section = 0
     try:
@@ -59,8 +59,8 @@ def critical_section():
         _local.critical_section -= 1
 
         if _local.critical_section == 0 and getattr(_local, 'raise_shutdown', False):
-            logger.warning('Critical section left, raising ShutDownImminentException')
-            raise ShutDownImminentException()
+            logger.warning('Critical section left, raising ShutdownImminentException')
+            raise ShutdownImminentException()
 
 
 WorkerStatus = enum(
@@ -105,11 +105,11 @@ class WorkHorse(multiprocessing.Process):
 
     def request_stop(self, signum, frame):
         if getattr(_local, 'critical_section', 0):
-            self.log.warning('Delaying ShutDownImminentException till critical section is finished')
+            self.log.warning('Delaying ShutdownImminentException till critical section is finished')
             _local.raise_shutdown = True
         else:
-            self.log.warning('Raising ShutDownImminentException to cancel job')
-            raise ShutDownImminentException()
+            self.log.warning('Raising ShutdownImminentException to cancel job')
+            raise ShutdownImminentException()
 
 
 class WorkerProcess:
@@ -155,8 +155,8 @@ class WorkerProcess:
             self.worker.shutdown()
 
     def queue_iter(self, burst):
-        qnames = self.queue_names()
-        self.log.debug('Listening on {0}...'.format(', '.join(qnames)))
+        self.log.debug('Listening on {0}...'.format(
+            ', '.join(q.name for q in self.queues)))
 
         while True:
             self.worker.heartbeat()
@@ -340,17 +340,13 @@ class Worker:
         obj = {
             'description': self.description,
             'state': self.state,
-            'queues': ','.join(self.queue_names()),
+            'queues': ','.join(q.name for q in self.queues),
             'current_job_id': self.current_job_id,
             'started_at': utcformat(self.started_at),
             'shutdown_at': utcformat(self.shutdown_at),
             'shutdown_requested_at': utcformat(self.shutdown_requested_at),
         }
         pipeline.hmset(self.key, obj)
-
-    @property
-    def queue_names(self):
-        return [q.name for q in self.queues]
 
     @property
     def key(self):

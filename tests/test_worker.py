@@ -305,7 +305,6 @@ class TestWorker(RQTestCase):
         w.work(burst=True)
         self.assertEqual(os.path.exists(sentinel_file), False)
 
-        # TODO: Having to do the manual refresh() here is really ugly!
         res.refresh()
         self.assertIn('JobTimeoutException', as_text(res.exc_info))
 

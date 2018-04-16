@@ -44,11 +44,6 @@ setup(
     entry_points={
         'console_scripts': [
             'rq = rq.cli:main',
-
-            # NOTE: rqworker/rqinfo are kept for backward-compatibility,
-            # remove eventually (TODO)
-            'rqinfo = rq.cli:info',
-            'rqworker = rq.cli:worker',
         ],
     },
     extras_require={

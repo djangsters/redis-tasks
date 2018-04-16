@@ -1,11 +1,11 @@
 import calendar
 import datetime
 import importlib
+import pickle
 from functools import wraps
 
-from .compat import as_text
 from .connections import resolve_connection
-from .exceptions import TimeoutFormatError
+from .exceptions import DeserializationError
 
 
 def import_attribute(name):
@@ -20,7 +20,7 @@ def utcnow():
 
 
 def utcformat(dt):
-    return dt.strftime(as_text('%Y-%m-%dT%H:%M:%SZ'))
+    return dt.strftime('%Y-%m-%dT%H:%M:%SZ')
 
 
 def utcparse(string):
@@ -40,6 +40,23 @@ def enum(name, *sequential, **named):
 def decode_list(lst):
     return [x.decode() for x in lst]
 
+
+def serialize(obj):
+    pickle.dumps(obj, protocol=pickle.HIGHEST_PROTOCOL)
+
+
+def deserialize(bytes_obj):
+    """Unpickles a string, but raises a unified DeserializationError in case anything fails.
+
+    This is a helper method to not have to deal with the fact that `loads()`
+    potentially raises many types of exceptions (e.g. AttributeError,
+    IndexError, TypeError, KeyError, etc.)
+    """
+    try:
+        obj = pickle.loads(bytes_obj)
+    except Exception as e:
+        raise DeserializationError('Could not unpickle', bytes_obj) from e
+    return obj
 
 def takes_pipeline(f):
     @wraps(f)

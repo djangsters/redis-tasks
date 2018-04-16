@@ -27,7 +27,7 @@ class ExpiringRegistry:
         cutoff_time = current_timestamp() - REGISTRIES_TTL
         expired_job_ids = decode_list(self.connection.zrangebyscore(
             self.zkey, 0, cutoff_time))
-        self.connection.delete(*(Job.key_for(job_id) for job_id in expired_job_ids))
+        Job.delete_many(expired_job_ids, pipeline=pipeline)
         self.connection.zremrangebyscore(self.zkey, 0, cutoff_time)
 
 

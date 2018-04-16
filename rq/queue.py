@@ -1,8 +1,7 @@
-from .compat import as_text
 from .connections import resolve_connection
 from .exceptions import (DequeueTimeout, NoSuchJobError, DeserializationError)
 from .job import Job, JobStatus
-from .utils import utcnow, parse_timeout, takes_pipeline
+from .utils import utcnow, parse_timeout, takes_pipeline, decode_list
 
 
 class Queue(object):
@@ -153,7 +152,7 @@ class Queue(object):
         result = cls.lpop(queue_keys, timeout)
         if result is None:
             return None, None
-        queue_key, job_id = map(as_text, result)
+        queue_key, job_id = decode_list(result)
         queue = cls.from_queue_key(queue_key)
         try:
             job = Job.fetch(job_id)

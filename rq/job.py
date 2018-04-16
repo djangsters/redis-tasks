@@ -1,12 +1,10 @@
 import inspect
-import traceback
 from uuid import uuid4
 
 from .connections import resolve_connection
 from .defaults import JOB_TIMEOUT
 from .exceptions import NoSuchJobError
 from .queue import Queue
-from .local import LocalStack
 from .utils import enum, import_attribute, utcformat, utcnow, utcparse, takes_pipeline
 from .registry import running_job_registry, finished_job_registry, failed_job_registry
 from .serialization import serialize, deserialize
@@ -21,11 +19,23 @@ JobStatus = enum(
 )
 
 
-class Job(object):
+def rq_task(*args, **kwargs):
+    return TaskProperties(*args, **kwargs).decorate
+
+
+class TaskProperties:
+    def __init__(self, is_reentrant=False, timeout=None):
+        self.is_reentrant = is_reentrant
+        self.timeout = timeout
+
+    def decorate(self, f):
+        f._rq_job_properties = self
+        return f
+
+
+class Job:
     def __init__(self, func=None, args=None, kwargs=None, *, fetch_id=None,
-                 description=None,
-                 timeout=None, id=None, meta=None,
-                 reentrant=None):
+                 id=None, description=None, meta=None):
         self.connection = resolve_connection()
 
         if fetch_id:
@@ -59,8 +69,6 @@ class Job(object):
         self.error_message = None
 
         self.description = description or self.get_call_string()
-        self.timeout = timeout or JOB_TIMEOUT
-        self.reentrant = reentrant
         self.status = None
         self.origin = None
         self.meta = meta or {}
@@ -68,7 +76,7 @@ class Job(object):
         self.enqueued_at = None
         self.started_at = None
         self.ended_at = None
-        self.unfinished_runs = []
+        self.aborted_runs = []
 
     @classmethod
     def fetch(cls, id):
@@ -89,8 +97,8 @@ class Job(object):
         running_job_registry.remove(self, pipeline=pipeline)
         Queue(self.origin).push_job(self, at_front=True, pipeline=pipeline)
         self._set_status(JobStatus.QUEUED, pipeline=pipeline)
-        self.unfinshed_runs.append((self.started_at, utcnow()))
-        pipeline.hset(self.key, 'unfinished_runs', serialize(self.unfinished_runs))
+        self.aborted_runs.append((self.started_at, utcnow()))
+        pipeline.hset(self.key, 'aborted_runs', serialize(self.aborted_runs))
         self.started_at = None
         pipeline.hdel(self.key, 'started_at')
 
@@ -124,10 +132,19 @@ class Job(object):
 
     @takes_pipeline
     def handle_abort(self, abort_reason, *, pipeline):
-        if self.reentrant:
+        if self.is_reentrant:
             self.requeue(pipeline=pipeline)
         else:
             self.set_failed(abort_reason, pipeline=pipeline)
+
+    @takes_pipeline
+    def cancel(self, *, pipeline):
+        # TODO: check which state we are in and react accordingly
+        # fail if the job is currently running
+        from .queue import Queue
+        if self.origin:
+            q = Queue(name=self.origin)
+            q.remove(self, pipeline=pipeline)
 
     @takes_pipeline
     def _set_status(self, status, *, pipeline):
@@ -138,15 +155,32 @@ class Job(object):
     def func(self):
         return import_attribute(self.func_name)
 
-    @classmethod
-    def exists(cls, job_id):
-        """Returns whether a job hash exists for the given job ID."""
-        conn = resolve_connection()
-        return conn.exists(cls.key_for(job_id))
+    @property
+    def func_properties(self):
+        if hasattr(self.func, '_rq_job_properties'):
+            return self.func._rq_job_properties
+        else:
+            return TaskProperties()
+
+    @property
+    def is_reentrant(self):
+        return self.func_properties.is_reentrant
+
+    @property
+    def timeout(self):
+        if self.func_properties.timeout is None:
+            return JOB_TIMEOUT
+        else:
+            return self.func_properties.timeout
 
     @classmethod
     def key_for(cls, job_id):
         return 'rq:job:' + job_id
+
+    @classmethod
+    @takes_pipeline
+    def delete_many(cls, job_ids, *, pipeline):
+        pipeline.delete(*(cls.key_for(job_id) for job_id in job_ids))
 
     @property
     def key(self):
@@ -171,12 +205,8 @@ class Job(object):
         for key in ['enqueue_at', 'started_at', 'ended_at']:
             setattr(self, key, utcparse(obj[key].decode()) if key in obj else None)
 
-        for key in ['timeout']:
-            setattr(self, key, int(obj[key]) if key in obj else None)
-
-        self.reentrant = bool(obj.get('reentrant'))
         self.meta = deserialize(obj['meta']) if obj.get('meta') else {}
-        self.unfinished_runs = deserialize(obj['unfinished_runs']) if obj.get('unfinished_runs') else []
+        self.aborted_runs = deserialize(obj['aborted_runs']) if obj.get('aborted_runs') else []
 
     @takes_pipeline
     def _save(self, *, pipeline=None):
@@ -186,19 +216,16 @@ class Job(object):
         obj['args'] = serialize(self._args)
         obj['kwargs'] = serialize(self._kwargs)
 
-        for key in ['status', 'description', 'origin', 'error_message', 'timeout']:
+        for key in ['status', 'description', 'origin', 'error_message']:
             if getattr(self, key) is not None:
                 obj[key] = getattr(self, key)
-
-        if self.reentrant is not None:
-            obj['reentrant'] = '' if self.reentrant else '1'
 
         for key in ['enqueue_at', 'started_at', 'ended_at']:
             if getattr(self, key) is not None:
                 obj[key] = utcformat(getattr(self, key))
 
-        if self.unfinished_runs:
-            obj['unfinished_runs'] = serialize(self.unfinished_runs)
+        if self.aborted_runs:
+            obj['aborted_runs'] = serialize(self.aborted_runs)
         if self.meta:
             obj['meta'] = serialize(self.meta)
 
@@ -207,15 +234,6 @@ class Job(object):
     def save_meta(self):
         meta = serialize(self.meta)
         self.connection.hset(self.key, 'meta', meta)
-
-    @takes_pipeline
-    def cancel(self, *, pipeline):
-        # TODO: check which state we are in and react accordingly
-        # fail if the job is currently running
-        from .queue import Queue
-        if self.origin:
-            q = Queue(name=self.origin)
-            q.remove(self, pipeline=pipeline)
 
     def execute(self):
         return self.func(*self.args, **self.kwargs)
