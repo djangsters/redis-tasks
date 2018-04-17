@@ -96,39 +96,37 @@ class Job:
         assert self.status is JobStatus.RUNNING
         running_job_registry.remove(self, pipeline=pipeline)
         Queue(self.origin).push_job(self, at_front=True, pipeline=pipeline)
-        self._set_status(JobStatus.QUEUED, pipeline=pipeline)
+        self.status = JobStatus.QUEUED
         self.aborted_runs.append((self.started_at, utcnow()))
-        pipeline.hset(self.key, 'aborted_runs', serialize(self.aborted_runs))
         self.started_at = None
-        pipeline.hdel(self.key, 'started_at')
+        self._save(['status', 'aborted_runs', 'started_at'], pipeline=pipeline)
 
     @takes_pipeline
     def set_running(self, worker, *, pipeline):
         assert self.status == JobStatus.QUEUED
         running_job_registry.add(self, worker, pipeline=pipeline)
-        self._set_status(JobStatus.RUNNING, pipeline=pipeline)
+        self.status = JobStatus.RUNNING
         self.started_at = utcnow()
-        pipeline.hset(self.key, 'started_at', utcformat(self.started_at))
+        self._save(['status', 'started_at'], pipeline=pipeline)
 
     @takes_pipeline
     def set_finished(self, *, pipeline):
         assert self.status == JobStatus.RUNNING
         running_job_registry.remove(self, pipeline=pipeline)
         finished_job_registry.add(self, pipeline=pipeline)
-        self._set_status(JobStatus.FINISHED, pipeline=pipeline)
+        self.status = JobStatus.FINISHED
         self.ended_at = utcnow()
-        pipeline.hset(self.key, 'ended_at', utcformat(self.ended_at))
+        self._save(['status', 'ended_at'], pipeline=pipeline)
 
     @takes_pipeline
     def set_failed(self, error_message, *, pipeline):
         assert self.status == JobStatus.RUNNING
         running_job_registry.remove(self, pipeline=pipeline)
         failed_job_registry.add(self, pipeline=pipeline)
-        self._set_status(JobStatus.FAILED, pipeline=pipeline)
+        self.status = JobStatus.FAILED
         self.error_message = error_message
-        pipeline.hset(self.key, 'error_message', self.error_message)
         self.ended_at = utcnow()
-        pipeline.hset(self.key, 'ended_at', utcformat(self.ended_at))
+        self._save(['status', 'error_message', 'ended_at'], pipeline=pipeline)
 
     @takes_pipeline
     def handle_outcome(self, outcome, *, pipeline):
@@ -146,10 +144,12 @@ class Job:
     def cancel(self, *, pipeline):
         # TODO: check which state we are in and react accordingly
         # fail if the job is currently running
+        # Need to do this in a transaction
         from .queue import Queue
         if self.origin:
             q = Queue(name=self.origin)
             q.remove(self, pipeline=pipeline)
+            self.delete_many([self.id], pipeline=pipeline)
 
     @takes_pipeline
     def _set_status(self, status, *, pipeline):
@@ -214,31 +214,33 @@ class Job:
         self.aborted_runs = deserialize(obj['aborted_runs']) if obj.get('aborted_runs') else []
 
     @takes_pipeline
-    def _save(self, *, pipeline=None):
-        """Persists the current job instance to its corresponding Redis key."""
-        obj = {}
-        obj['func_name'] = self.func_name
-        obj['args'] = serialize(self._args)
-        obj['kwargs'] = serialize(self._kwargs)
+    def _save(self, fields=None, *, pipeline=None):
+        string_fields = ['func_name', 'status', 'description', 'origin', 'error_message']
+        date_fields = ['enqueue_at', 'started_at', 'ended_at']
+        data_fields = ['args', 'kwargs', 'meta', 'aborted_runs']
+        if fields is None:
+            fields = string_fields + date_fields + data_fields
 
-        for key in ['status', 'description', 'origin', 'error_message']:
-            if getattr(self, key) is not None:
-                obj[key] = getattr(self, key)
-
-        for key in ['enqueue_at', 'started_at', 'ended_at']:
-            if getattr(self, key) is not None:
-                obj[key] = utcformat(getattr(self, key))
-
-        if self.aborted_runs:
-            obj['aborted_runs'] = serialize(self.aborted_runs)
-        if self.meta:
-            obj['meta'] = serialize(self.meta)
-
-        pipeline.hmset(self.key, obj)
+        deletes = []
+        store = {}
+        for field in fields:
+            value = getattr(self, field)
+            if value is None:
+                deletes.append(field)
+            elif field in string_fields:
+                store[field] = value
+            elif field in date_fields:
+                store[field] = utcformat(value)
+            elif field in data_fields:
+                store[field] = serialize(value)
+            else:
+                raise AttributeError(f'{field} is not a valid attribute')
+        if deletes:
+            pipeline.hdel(self.key, *deletes)
+        pipeline.hmset(self.key, store)
 
     def save_meta(self):
-        meta = serialize(self.meta)
-        self.connection.hset(self.key, 'meta', meta)
+        self._save(['meta'])
 
     def execute(self):
         return self.func(*self.args, **self.kwargs)

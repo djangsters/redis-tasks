@@ -139,6 +139,14 @@ class JobOutcome:
             exc_string = ''.join(traceback.format_exception(*exc_info))
             return cls('failure', message=exc_string)
 
+    @classmethod
+    def for_worker_died(cls, job):
+        try:
+            raise WorkerDied("Worker died")
+        except WorkerDied:
+            exc_info = sys.exc_info()
+        return cls.from_job_result(job, *exc_info)
+
 
 configured_middlewares = []  # TODO: middleware config
 
@@ -216,7 +224,7 @@ class WorkerProcess:
                 self.process_job(job)
                 jobs_processed += 1
 
-                self.heartbeat()
+                self.worker.heartbeat()
                 self.maintenance.run_if_neccessary()
             else:
                 self.log.info("Burst finished, quitting")
@@ -245,7 +253,6 @@ class WorkerProcess:
             self.worker.start_job(job, pipeline=pipeline)
             job.set_running(self, pipeline=pipeline)
 
-        # TODO: Good Logging
         self.log.info('{0}: {1} ({2})'.format(job.origin, job.description, job.id))
         try:
             outcome = self.execute_job(job)
@@ -257,7 +264,6 @@ class WorkerProcess:
             self.worker.end_job(job, pipeline=pipeline)
             job.handle_outcome(outcome, pipeline=pipeline)
 
-        # TODO: log outcome
         self.log.info('{0}: {1} ({2})'.format(job.origin, 'Job OK', job.id))
         return True
 
@@ -401,17 +407,29 @@ class Worker:
             setattr(self, k, utcparse(obj[k]) if obj.get(k) else None)
 
     @takes_pipeline
-    def save(self, *, pipeline):
-        obj = {
-            'description': self.description,
-            'state': self.state,
-            'queues': ','.join(q.name for q in self.queues),
-            'current_job_id': self.current_job_id,
-            'started_at': utcformat(self.started_at),
-            'shutdown_at': utcformat(self.shutdown_at),
-            'shutdown_requested_at': utcformat(self.shutdown_requested_at),
-        }
-        pipeline.hmset(self.key, obj)
+    def _save(self, fields=None, *, pipeline):
+        string_fields = ['description', 'state', 'queues', 'current_job_id']
+        date_fields = ['started_at', 'shutdown_at', 'shutdown_requested_at']
+        if fields is None:
+            fields = string_fields + date_fields
+
+        deletes = []
+        store = {}
+        for field in fields:
+            value = getattr(self, field)
+            if field == 'queues':
+                store['queues'] = ','.join(q.name for q in self.queues),
+            elif value is None:
+                deletes.append(field)
+            elif field in string_fields:
+                store[field] = value
+            elif field in date_fields:
+                store[field] = utcformat(value)
+            else:
+                raise AttributeError(f'{field} is not a valid attribute')
+        if deletes:
+            pipeline.hdel(self.key, *deletes)
+        pipeline.hmset(self.key, store)
 
     @property
     def key(self):
@@ -427,55 +445,47 @@ class Worker:
     def startup(self, *, pipeline):
         self.log.debug(f'Registering birth of worker {self.description} ({self.id})')
         if self.connection.exists(self.key):
-            # Note that there is a race condition here – this is just a sanity check
+            # This is imperfect due to a race condition, but is only a sanity check
             raise Exception('There already was a worker with id {self.id}')
         self.state = WorkerState.IDLE
-        self.heartbeat(pipeline=pipeline)
-        self.save(pipeline=pipeline)
+        worker_registry.add(self, pipeline=pipeline)
+        self._save(pipeline=pipeline)
 
     @takes_pipeline
     def start_job(self, job, *, pipeline):
-        self._set_state(WorkerState.BUSY, pipeline=pipeline)
+        assert self.state == WorkerState.IDLE
+        self.state = WorkerState.BUSY
         self.current_job_id = job.id
-        pipeline.hset(self.key, 'current_job_id', job.id)
+        self._save(['state', 'current_job_id'], pipeline=pipeline)
 
     @takes_pipeline
     def end_job(self, job, *, pipeline):
         assert self.state == WorkerState.BUSY
-        self._set_state(WorkerState.IDLE, pipeline=pipeline)
+        self.state = WorkerState.IDLE
         self.current_job_id = None
-        pipeline.hdel(self.key, 'current_job_id')
+        self._save(['state', 'current_job_id'], pipeline=pipeline)
 
     @takes_pipeline
     def shutdown(self, *, pipeline):
+        assert self.state == WorkerState.IDLE
         worker_registry.remove(self, pipeline=pipeline)
-        self._set_state(WorkerState.DEAD, pipeline=pipeline)
+        self.state = WorkerState.DEAD
         self.shutdown_at = utcnow()
-        pipeline.hset(self.key, 'shutdown_at', utcformat(self.shutdown_at))
+        self._save(['state', 'shutdown_at'], pipeline=pipeline)
         pipeline.expire(self.key, DEAD_WORKER_TTL)
 
     @takes_pipeline
     def died(self, *, pipeline):
         worker_registry.remove(self, pipeline=pipeline)
-        self._set_state(WorkerState.DEAD, pipeline=pipeline)
+        self.state = WorkerState.DEAD
         self.shutdown_at = utcnow()
         if self.current_job_id:
             job = Job.fetch(self.current_job_id)
-            try:
-                raise WorkerDied("Worker died")
-            except WorkerDied:
-                exc_info = sys.exc_info()
-            outcome = JobOutcome.from_job_result(job, *exc_info)
+            outcome = JobOutcome.for_worker_died(job)
             job.handle_outcome(outcome, pipeline=pipeline)
             self.current_job_id = None
-            pipeline.hdel(self.key, 'current_job_id')
-        pipeline.hset(self.key, 'shutdown_at', utcformat(self.shutdown_at))
+        self._save(['state', 'current_job_id', 'shutdown_at'], pipeline=pipeline)
         pipeline.expire(self.key, DEAD_WORKER_TTL)
-
-    @takes_pipeline
-    def _set_state(self, state, *, pipeline=None):
-        self.state = state
-        pipeline.hset(self.key, 'state', state)
 
     def set_shutdown_requested(self):
         self.shutdown_requested_at = utcnow()
