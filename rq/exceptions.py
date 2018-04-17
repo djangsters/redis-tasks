@@ -4,6 +4,10 @@ class JobAborted(Exception):
         self.message = message
 
 
+class WorkerDied(JobAborted):
+    pass
+
+
 class NoSuchJobError(Exception):
     pass
 

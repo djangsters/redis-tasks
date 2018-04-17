@@ -131,11 +131,16 @@ class Job:
         pipeline.hset(self.key, 'ended_at', utcformat(self.ended_at))
 
     @takes_pipeline
-    def handle_abort(self, abort_reason, *, pipeline):
-        if self.is_reentrant:
-            self.requeue(pipeline=pipeline)
-        else:
-            self.set_failed(abort_reason, pipeline=pipeline)
+    def handle_outcome(self, outcome, *, pipeline):
+        if outcome.outcome == 'success':
+            self.set_finished(pipeline=pipeline)
+        elif outcome.outcome == 'failure':
+            self.set_failed(outcome.message, pipeline=pipeline)
+        elif outcome.outcome == 'aborted':
+            if self.is_reentrant:
+                self.requeue(pipeline=pipeline)
+            else:
+                self.set_failed(outcome.message, pipeline=pipeline)
 
     @takes_pipeline
     def cancel(self, *, pipeline):

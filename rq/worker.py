@@ -12,11 +12,11 @@ from datetime import timedelta
 from .connections import get_current_connection
 from .defaults import (
     DEAD_WORKER_TTL, WORKER_HEARTBEAT_TIMEOUT, WORKER_HEARTBEAT_FREQ, MAINTENANCE_FREQ)
-from .exceptions import DequeueTimeout, ShutdownImminentException, NoSuchWorkerError, JobAborted
+from .exceptions import DequeueTimeout, ShutdownImminentException, NoSuchWorkerError, JobAborted, WorkerDied
 from .job import Job
 from .queue import Queue
 from .registry import expire_registries, worker_registry
-from .utils import enum, utcformat, utcnow, utcparse, takes_pipeline, import_attribute
+from .utils import enum, utcformat, utcnow, utcparse, takes_pipeline
 from .version import VERSION
 
 logger = logging.getLogger(__name__)
@@ -117,30 +117,13 @@ class TaskMiddleware:
 
 
 class JobOutcome:
-    def __init__(self, outcome, *, error_message=None):
+    def __init__(self, outcome, *, message=None):
         assert outcome in ['success', 'failure', 'aborted']
         self.outcome = outcome
-        self.error_message = error_message
+        self.message = message
 
-
-class WorkHorse(multiprocessing.Process):
-    def run(self, job, worker_connection):
-        self.setup_work_horse_signals()
-
-        exc_info = []
-        configured_middlewares = []  # TODO: middleware config
-        try:
-            for middleware in configured_middlewares:
-                if middleware.start(job):
-                    break
-            else:
-                job.execute()
-        except ShutdownImminentException:
-            _, _, exc_tb = sys.exc_info()
-            exc_info = JobAborted, JobAborted("Worker shutdown")
-        except Exception:
-            exc_info = sys.exc_info()
-
+    @classmethod
+    def from_job_result(cls, job, *exc_info):
         for middleware in reversed(configured_middlewares):
             try:
                 if middleware.end(job, *exc_info):
@@ -148,19 +131,41 @@ class WorkHorse(multiprocessing.Process):
             except Exception:
                 exc_info = sys.exc_info()
 
-        if not exc_info:
-            worker_connection.send(JobOutcome('success'))
+        if not exc_info or not exc_info[0]:
+            return cls('success')
         elif isinstance(exc_info[1], JobAborted):
-            worker_connection.send(JobOutcome('aborted', message=exc_info[1].message))
+            return cls('aborted', message=exc_info[1].message)
         else:
             exc_string = ''.join(traceback.format_exception(*exc_info))
-            worker_connection.send(JobOutcome('failure', error_message=exc_string))
+            return cls('failure', message=exc_string)
 
-    def send_signal(self, sig):
-        os.kill(self.pid, sig)
 
-    def setup_signals(self):
-        """Setup signal handing for the newly spawned work horse."""
+configured_middlewares = []  # TODO: middleware config
+
+
+class WorkHorse(multiprocessing.Process):
+    def run(self, job, worker_connection):
+        self.setup_signal_handler()
+
+        exc_info = []
+        try:
+            try:
+                skip_job = False
+                with critical_section():
+                    for middleware in configured_middlewares:
+                        if middleware.start(job):
+                            skip_job = True
+                            break
+                if not skip_job:
+                    job.execute()
+            except ShutdownImminentException as e:
+                raise JobAborted("Worker shutdown") from e
+        except Exception:
+            exc_info = sys.exc_info()
+
+        worker_connection.send(JobOutcome.from_job_result(job, *exc_info))
+
+    def setup_signal_handler(self):
         signal.signal(signal.SIGINT, signal.SIG_IGN)
         signal.signal(signal.SIGTERM, signal.SIG_IGN)
         signal.signal(signal.SIGUSR1, self.request_stop)
@@ -172,6 +177,9 @@ class WorkHorse(multiprocessing.Process):
         else:
             self.log.warning('Raising ShutdownImminentException to cancel job')
             raise ShutdownImminentException()
+
+    def send_signal(self, sig):
+        os.kill(self.pid, sig)
 
 
 class WorkerProcess:
@@ -247,12 +255,7 @@ class WorkerProcess:
 
         with self.connection.pipeline() as pipeline:
             self.worker.end_job(job, pipeline=pipeline)
-            if outcome.outcome == 'success':
-                job.set_finished(pipeline=pipeline)
-            elif outcome.outcome == 'failure':
-                job.set_failed(outcome.error_message, pipeline=pipeline)
-            elif outcome.outcome == 'aborted':
-                job.handle_abort('Worker shut down', pipeline=pipeline)
+            job.handle_outcome(outcome, pipeline=pipeline)
 
         # TODO: log outcome
         self.log.info('{0}: {1} ({2})'.format(job.origin, 'Job OK', job.id))
@@ -457,7 +460,15 @@ class Worker:
         self._set_state(WorkerState.DEAD, pipeline=pipeline)
         self.shutdown_at = utcnow()
         if self.current_job_id:
-            Job.fetch(self.current_job_id).handle_abort('Worker died', pipeline=pipeline)
+            job = Job.fetch(self.current_job_id)
+            try:
+                raise WorkerDied("Worker died")
+            except WorkerDied:
+                exc_info = sys.exc_info()
+            outcome = JobOutcome.from_job_result(job, *exc_info)
+            job.handle_outcome(outcome, pipeline=pipeline)
+            self.current_job_id = None
+            pipeline.hdel(self.key, 'current_job_id')
         pipeline.hset(self.key, 'shutdown_at', utcformat(self.shutdown_at))
         pipeline.expire(self.key, DEAD_WORKER_TTL)
 
