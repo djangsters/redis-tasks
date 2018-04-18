@@ -6,17 +6,19 @@ import socket
 import sys
 import threading
 import traceback
-from contextlib import contextmanager, suppress
+import uuid
+from contextlib import contextmanager, suppress, ExitStack
 from datetime import timedelta
 
 from .connections import get_current_connection
-from .defaults import (
-    DEAD_WORKER_TTL, WORKER_HEARTBEAT_TIMEOUT, WORKER_HEARTBEAT_FREQ, MAINTENANCE_FREQ)
-from .exceptions import DequeueTimeout, ShutdownImminentException, NoSuchWorkerError, JobAborted, WorkerDied
+from .defaults import (DEAD_WORKER_TTL, MAINTENANCE_FREQ,
+                       WORKER_HEARTBEAT_FREQ, WORKER_HEARTBEAT_TIMEOUT)
+from .exceptions import (DequeueTimeout, JobAborted, NoSuchWorkerError,
+                         ShutdownImminentException, WorkerDied)
 from .job import Job
 from .queue import Queue
 from .registry import expire_registries, worker_registry
-from .utils import enum, utcformat, utcnow, utcparse, takes_pipeline
+from .utils import enum, takes_pipeline, utcformat, utcnow, utcparse
 from .version import VERSION
 
 logger = logging.getLogger(__name__)
@@ -47,15 +49,17 @@ def signal_name(signum):
         return 'SIG_UNKNOWN'
 
 
-@contextmanager
-def critical_section():
-    # TODO: _local should not be thread-local
-    if not hasattr(_local, 'critical_section'):
-        _local.critical_section = 0
-    try:
+class CriticalSection:
+    def enter(self):
+        self.__enter__()
+
+    def exit(self):
+        self.__exit__()
+
+    def __enter__(self):
         _local.critical_section += 1
-        yield
-    finally:
+
+    def __exit__(self, *args):
         _local.critical_section -= 1
 
         if _local.critical_section == 0 and getattr(_local, 'raise_shutdown', False):
@@ -74,16 +78,22 @@ WorkerStatus = enum(
 class TaskMiddleware:
     """Base class for a task execution middleware.
 
-    Before task execution, the `start()` methods are called in the order the
+    Before task execution, the `before()` methods are called in the order the
     middlewares are listen in TODO[setting]. Any middleware can short-circuit
-    this process by returning True or raising an exception in the `start()`
-    method. The following `start()` method will then not be called.
+    this process by returning True or raising an exception in the `before()`
+    method. The following `before()` method will then not be called.
 
-    Independently of whether the task ran or a middleware interupted the startup,
-    all configured middelwares' `end()` methods are called after execution. If
-    the worker running the task did not die and a middleware's `start()` method
-    was called for this task, the `end()` method will be called on the same
-    instance of the middleware. Otherwise a new instance is created.
+    Independently of whether the task ran or a middleware interupted the
+    startup, all configured middelwares' `process_outcome()` methods are called
+    after execution. If the worker running the task did not die and a
+    middleware's `before()` method was called for this task, the
+    `process_outcome()` method will be called on the same instance of the
+    middleware. Otherwise a new instance is created.
+
+    Finally, if the worker did not die, the `after()` method is called for all
+    middlewares that had their `before()` method called. This is guaranteed to
+    happen on the same instance. This is the right place to do process-local
+    cleanup.
 
     The JobAborted exception has a special meaning in this context. It is raised
     by rq if the job did not fail itself, but was aborted for external reasons.
@@ -91,15 +101,15 @@ class TaskMiddleware:
     by the outer-most middleware, reentrant tasks will be reenqueued at the
     front of the queue they came from."""
 
-    def start(self, job):
+    def before(self, job):
         """Is called before the job is started.
 
         Can return True to stop execution and treat the job as succeeded.
         Can raise an exception to stop execution and treat the job as failed."""
         pass
 
-    def end(self, job, exc_type=None, exc_val=None, exc_tb=None):
-        """Is called after job exection.
+    def process_outcome(self, job, exc_type=None, exc_val=None, exc_tb=None):
+        """Process the outcome of the job.
 
         If the job failed to succeed, the three exc_ parameters will be set.
         This can happen for the following reasons:
@@ -115,6 +125,12 @@ class TaskMiddleware:
         Raising an exception passes the raised exception to the next middleware."""
         pass
 
+    def after(self, job):
+        """Is called after `process_outcome`.
+
+        This function might not be called if the worker is exiting early"""
+        pass
+
 
 class JobOutcome:
     def __init__(self, outcome, *, message=None):
@@ -126,7 +142,7 @@ class JobOutcome:
     def from_job_result(cls, job, *exc_info):
         for middleware in reversed(configured_middlewares):
             try:
-                if middleware.end(job, *exc_info):
+                if middleware.process_outcome(job, *exc_info):
                     exc_info = []
             except Exception:
                 exc_info = sys.exc_info()
@@ -153,19 +169,27 @@ configured_middlewares = []  # TODO: middleware config
 
 class WorkHorse(multiprocessing.Process):
     def run(self, job, worker_connection):
+        cs = CriticalSection()
+        cs.enter()
         self.setup_signal_handler()
+        worker_connection.send(True)
 
         exc_info = []
+        executed_middleware = []
+        skip_job = False
+
+        for middleware in configured_middlewares:
+            executed_middleware.append(middleware)
+            if middleware.before(job):
+                skip_job = True
+                break
+
         try:
             try:
-                skip_job = False
-                with critical_section():
-                    for middleware in configured_middlewares:
-                        if middleware.start(job):
-                            skip_job = True
-                            break
+                cs.exit()
                 if not skip_job:
                     job.execute()
+                self.ignore_shutdown_signal()
             except ShutdownImminentException as e:
                 raise JobAborted("Worker shutdown") from e
         except Exception:
@@ -173,12 +197,20 @@ class WorkHorse(multiprocessing.Process):
 
         worker_connection.send(JobOutcome.from_job_result(job, *exc_info))
 
+        for middleware in reversed(executed_middleware):
+            middleware.after(job)
+
     def setup_signal_handler(self):
+        _local.critical_section = 0
         signal.signal(signal.SIGINT, signal.SIG_IGN)
         signal.signal(signal.SIGTERM, signal.SIG_IGN)
         signal.signal(signal.SIGUSR1, self.request_stop)
 
+    def ignore_shutdown_signal(self):
+        signal.signal(signal.SIGUSR1, signal.SIG_IGN)
+
     def request_stop(self, signum, frame):
+        self.ignore_shutdown_signal()
         if getattr(_local, 'critical_section', 0):
             self.log.warning('Delaying ShutdownImminentException till critical section is finished')
             _local.raise_shutdown = True
@@ -200,7 +232,8 @@ class WorkerProcess:
         hostname = socket.gethostname()
         shortname, _, _ = hostname.partition('.')
         description = '{0}.{1}'.format(shortname, self.pid)
-        id = generate_worker_id()
+
+        id = str(uuid.uuid4())
 
         self.maintenance = Maintenance()
         self.worker = Worker(id, description=description, queues=queues)
@@ -268,13 +301,18 @@ class WorkerProcess:
         return True
 
     def execute_job(self, job):
+        timeout_at = utcnow() + timedelta(seconds=job.timeout)
         work_horse = WorkHorse()
         work_horse.daemon = True
         horse_connection, writer = multiprocessing.Pipe(duplex=False)
-        work_horse.start(job, writer)
         outcome = None
-        timeout_at = utcnow() + timedelta(seconds=job.timeout)
         try:
+            work_horse.start(job, writer)
+            # Wait for horse to set up its signal handling
+            if horse_connection.poll(5):
+                horse_connection.read()
+            else:
+                return JobOutcome('aborted', "Workhorse failed to start")
             while work_horse.is_alive():
                 self.worker.heartbeat()
                 if utcnow() > timeout_at:
@@ -286,14 +324,14 @@ class WorkerProcess:
                     work_horse.send_signal(signal.SIGUSR1)
 
             if not horse_connection.poll():
-                outcome = JobOutcome('aborted')
+                outcome = JobOutcome('aborted', "Workhorse died")
             else:
                 outcome = horse_connection.recv()
         finally:
             if work_horse.is_alive():
                 work_horse.send_signal(signal.SIGKILL)
             if not outcome:
-                outcome = JobOutcome('aborted')
+                outcome = JobOutcome('aborted', "Workhorse died")
         return outcome
 
     def install_signal_handlers(self):
@@ -341,9 +379,16 @@ class Maintenance:
         if (not self.last_run_at or
                 (utcnow() - self.last_run_at) < timedelta(seconds=MAINTENANCE_FREQ)):
             return
+        # The cleanup tasks are not safe to run in paralell, so use this lock
+        # to ensure that only one worker runs them.
         if self.connection.setnx(self.key, utcnow()):
             self.connection.expire(self.key, MAINTENANCE_FREQ)
             self.run()
+        else:
+            value = self.connection.get(self.key)
+            # might be None since time has passed between SETNX and GET
+            if value:
+                self.last_run_at = utcparse(value)
 
     def handle_dead_workers(self):
         dead_worker_ids = worker_registry.get_dead_ids(self)

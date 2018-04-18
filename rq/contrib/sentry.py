@@ -5,11 +5,11 @@ class SentryMiddleware(TaskMiddleware):
     def __init__(self, client):
         self.client = client
 
-    def start(self, task):
+    def before(self, task):
         self.client.context.activate()
         self.client.transaction.push(task.func_name)
 
-    def end(self, task, *exc_info):
+    def process_outcome(self, task, *exc_info):
         if exc_info and exc_info[0]:
             self.client.captureException(
                 exc_info=exc_info,
@@ -20,5 +20,7 @@ class SentryMiddleware(TaskMiddleware):
                     'kwargs': task.kwargs,
                     'description': task.description,
                 })
+
+    def after(self, task):
         self.client.transaction.pop(task.func_name)
         self.client.context.clear()

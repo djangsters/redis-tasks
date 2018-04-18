@@ -1,7 +1,6 @@
 from .connections import resolve_connection
 from .exceptions import NoSuchWorkerError
 from .job import Job
-from .worker import Worker
 from .utils import current_timestamp, takes_pipeline, decode_list
 from .defaults import REGISTRIES_TTL, WORKER_HEARTBEAT_TIMEOUT
 

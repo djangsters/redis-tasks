@@ -1,13 +1,15 @@
 import inspect
-from uuid import uuid4
+import uuid
 
 from .connections import resolve_connection
 from .defaults import JOB_TIMEOUT
 from .exceptions import NoSuchJobError
 from .queue import Queue
-from .utils import enum, import_attribute, utcformat, utcnow, utcparse, takes_pipeline
-from .registry import running_job_registry, finished_job_registry, failed_job_registry
-from .serialization import serialize, deserialize
+from .registry import (failed_job_registry, finished_job_registry,
+                       running_job_registry)
+from .serialization import deserialize, serialize
+from .utils import (enum, import_attribute, takes_pipeline, utcformat, utcnow,
+                    utcparse)
 
 JobStatus = enum(
     'JobStatus',
@@ -34,8 +36,8 @@ class TaskProperties:
 
 
 class Job:
-    def __init__(self, func=None, args=None, kwargs=None, *, fetch_id=None,
-                 id=None, description=None, meta=None):
+    def __init__(self, func=None, args=None, kwargs=None, *,
+                 fetch_id=None, description=None, meta=None):
         self.connection = resolve_connection()
 
         if fetch_id:
@@ -43,7 +45,7 @@ class Job:
             self.refresh()
             return
 
-        self.id = id or str(uuid4())
+        self.id = str(uuid.uuid4())
 
         if inspect.isfunction(func) or inspect.isbuiltin(func):
             self.func_name = '{0}.{1}'.format(func.__module__, func.__name__)
