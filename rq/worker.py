@@ -4,26 +4,19 @@ import os
 import signal
 import socket
 import sys
-import threading
 import traceback
 import uuid
-from contextlib import contextmanager, suppress, ExitStack
+from contextlib import contextmanager, suppress
 from datetime import timedelta
 
-from .connections import get_current_connection
-from .defaults import (DEAD_WORKER_TTL, MAINTENANCE_FREQ,
-                       WORKER_HEARTBEAT_FREQ, WORKER_HEARTBEAT_TIMEOUT)
-from .exceptions import (DequeueTimeout, TaskAborted, NoSuchWorkerError,
-                         ShutdownImminentException, WorkerDied)
-from .task import Task, TaskOutcome
+from .conf import connection, settings, RedisKey
+from .exceptions import (DequeueTimeout, NoSuchWorkerError, ShutdownImminentException)
 from .queue import Queue
 from .registry import expire_registries, worker_registry
-from .utils import enum, atomic_pipeline, utcformat, utcnow, utcparse
-from .version import VERSION
+from .task import Task, TaskOutcome, initialize_middlewares
+from .utils import atomic_pipeline, enum, utcformat, utcnow, utcparse, import_attribute
 
 logger = logging.getLogger(__name__)
-
-_local = threading.local()
 
 
 class ShutdownRequested(BaseException):
@@ -49,21 +42,35 @@ def signal_name(signum):
         return 'SIG_UNKNOWN'
 
 
-class CriticalSection:
-    def enter(self):
+class PostponeShutdown:
+    _active = {}
+    _shutdown_delayed = False
+
+    def activate(self):
         self.__enter__()
 
-    def exit(self):
+    def deactivate(self):
         self.__exit__()
 
     def __enter__(self):
-        _local.critical_section += 1
+        if self in self._active:
+            raise Exception("PostponeShutdown already active")
+        self._active.add(self)
 
     def __exit__(self, *args):
-        _local.critical_section -= 1
+        self._active.remove(self)
 
-        if _local.critical_section == 0 and getattr(_local, 'raise_shutdown', False):
+        if not self._active and self._shutdown_delayed:
             logger.warning('Critical section left, raising ShutdownImminentException')
+            raise ShutdownImminentException()
+
+    @classmethod
+    def trigger_shutdown(cls):
+        if cls._active:
+            logger.warning('Delaying ShutdownImminentException till critical section is finished')
+            cls._shutdown_delayed = True
+        else:
+            logger.warning('Raising ShutdownImminentException to cancel task')
             raise ShutdownImminentException()
 
 
@@ -77,16 +84,15 @@ WorkerStatus = enum(
 
 class WorkHorse(multiprocessing.Process):
     def run(self, task, worker_connection):
-        cs = CriticalSection()
-        cs.enter()
+        ps = PostponeShutdown()
+        ps.activate()
         self.setup_signal_handler()
         worker_connection.send(True)
 
-        outcome = task.execute(pre_run=cs.exit, post_run=self.ignore_shutdown_signal)
+        outcome = task.execute(pre_run=ps.deactivate, post_run=self.ignore_shutdown_signal)
         worker_connection.send(outcome)
 
     def setup_signal_handler(self):
-        _local.critical_section = 0
         signal.signal(signal.SIGINT, signal.SIG_IGN)
         signal.signal(signal.SIGTERM, signal.SIG_IGN)
         signal.signal(signal.SIGUSR1, self.request_stop)
@@ -96,12 +102,7 @@ class WorkHorse(multiprocessing.Process):
 
     def request_stop(self, signum, frame):
         self.ignore_shutdown_signal()
-        if getattr(_local, 'critical_section', 0):
-            self.log.warning('Delaying ShutdownImminentException till critical section is finished')
-            _local.raise_shutdown = True
-        else:
-            self.log.warning('Raising ShutdownImminentException to cancel task')
-            raise ShutdownImminentException()
+        PostponeShutdown.trigger_shutdown()
 
     def send_signal(self, sig):
         os.kill(self.pid, sig)
@@ -115,17 +116,13 @@ def generate_worker_description(*, pid):
 
 class WorkerProcess:
     def __init__(self, queues, burst):
-        self.connection = get_current_connection()
-
-        description = generate_worker_description()
-
+        description_generator = import_attribute(settings.WORKER_DESCRIPTION_FUNCTION)
+        description = description_generator()
         id = str(uuid.uuid4())
-
-        self.maintenance = Maintenance()
         self.worker = Worker(id, description=description, queues=queues)
+        self.maintenance = Maintenance()
         self.in_receive_shutdown = 0
         self.shutdown_requested = False
-        self.run(burst)
 
     def run(self, burst=False):
         """Starts the work loop.
@@ -133,13 +130,17 @@ class WorkerProcess:
         Returns the number of tasks that were processed in burst mode"""
         self.install_signal_handlers()
         self.worker.startup()
-        self.log.info("RQ worker {0!r} started, version {1}".format(self.key, VERSION))
+        self.log.info("RQ worker {}({!r}) started".format(
+            self.worker.description, self.worker.id))
+
+        if settings.WORKER_PRELOAD_FUNCTION:
+            worker_preload = import_attribute(settings.WORKER_PRELOAD_FUNCTION)
+            worker_preload(self.worker)
+        initialize_middlewares()
 
         try:
             tasks_processed = 0
             for task in self.task_queue_iter(burst):
-                # TODO: The task is in limbo in this moment. If the process
-                # crashes here, we lose track of it.
                 self.process_task(task)
                 tasks_processed += 1
 
@@ -153,14 +154,14 @@ class WorkerProcess:
 
     def queue_iter(self, burst):
         self.log.debug('Listening on {0}...'.format(
-            ', '.join(q.name for q in self.queues)))
+            ', '.join(q.name for q in self.worker.queues)))
 
         while True:
             self.worker.heartbeat()
             try:
-                timeout = None if burst else WORKER_HEARTBEAT_FREQ
+                timeout = None if burst else settings.WORKER_HEARTBEAT_FREQ
                 with self.receive_shutdown():
-                    task, queue = Queue.dequeue_any(self.queues, timeout)
+                    task, queue = Queue.dequeue_any(self.worker.queues, timeout)
             except DequeueTimeout:
                 continue
             if burst and task is None:
@@ -168,7 +169,7 @@ class WorkerProcess:
             yield task
 
     def process_task(self, task):
-        with self.connection.pipeline() as pipeline:
+        with connection.pipeline() as pipeline:
             self.worker.start_task(task, pipeline=pipeline)
             task.set_running(self, pipeline=pipeline)
 
@@ -179,7 +180,7 @@ class WorkerProcess:
             exc_string = ''.join(traceback.format_exception(*sys.exc_info()))
             outcome = TaskOutcome('failure', error_message=exc_string)
 
-        with self.connection.pipeline() as pipeline:
+        with connection.pipeline() as pipeline:
             self.worker.end_task(task, pipeline=pipeline)
             task.handle_outcome(outcome, pipeline=pipeline)
 
@@ -205,7 +206,7 @@ class WorkerProcess:
                     work_horse.send_signal(signal.SIGKILL)
                 try:
                     with self.receive_shutdown():
-                        work_horse.join(WORKER_HEARTBEAT_FREQ)
+                        work_horse.join(settings.WORKER_HEARTBEAT_FREQ)
                 except ShutdownRequested:
                     work_horse.send_signal(signal.SIGUSR1)
 
@@ -251,19 +252,19 @@ class WorkerProcess:
 class Maintenance:
     def __init__(self):
         self.last_run_at = None
-        self.key = 'rq:last_maintenance'
+        self.key = RedisKey('last_maintenance')
 
     def run_if_neccessary(self):
         if (not self.last_run_at or
-                (utcnow() - self.last_run_at) < timedelta(seconds=MAINTENANCE_FREQ)):
+                (utcnow() - self.last_run_at) < timedelta(seconds=settings.MAINTENANCE_FREQ)):
             return
         # The cleanup tasks are not safe to run in paralell, so use this lock
         # to ensure that only one worker runs them.
-        if self.connection.setnx(self.key, utcnow()):
-            self.connection.expire(self.key, MAINTENANCE_FREQ)
+        if connection.setnx(self.key, utcnow()):
+            connection.expire(self.key, settings.MAINTENANCE_FREQ)
             self.run()
 
-        redis_value = self.connection.get(self.key)
+        redis_value = connection.get(self.key)
         # might have expired between a failed SETNX and the GET
         if redis_value:
             self.last_run_at = utcparse(redis_value)
@@ -287,8 +288,6 @@ WorkerState = enum(
 
 
 class Worker:
-    redis_worker_namespace_prefix = 'rq:worker:'
-
     @classmethod
     def all(cls):
         return [cls.fetch(id) for id in worker_registry.get_alive_ids()]
@@ -299,8 +298,6 @@ class Worker:
 
     def __init__(self, id=None, *, description=None, queues=None,
                  fetch_id=None):
-        self.connection = get_current_connection()
-
         if fetch_id:
             self.id = fetch_id
             self.refresh()
@@ -316,7 +313,7 @@ class Worker:
         self.shutdown_requested_at = None
 
     def refresh(self):
-        obj = {k.decode(): v.decode() for k, v in self.connection.hmgetall(self.key)}
+        obj = {k.decode(): v.decode() for k, v in connection.hmgetall(self.key)}
         if not obj:
             raise NoSuchWorkerError(self.id)
         self.state = obj['state']
@@ -356,7 +353,7 @@ class Worker:
 
     @property
     def key(self):
-        return self.redis_worker_namespace_prefix + self.id
+        return RedisKey('worker:' + self.id)
 
     def heartbeat(self):
         """Send a heartbeat.
@@ -367,9 +364,6 @@ class Worker:
     @atomic_pipeline
     def startup(self, *, pipeline):
         self.log.debug(f'Registering birth of worker {self.description} ({self.id})')
-        if self.connection.exists(self.key):
-            # This is imperfect due to a race condition, but is only a sanity check
-            raise Exception('There already was a worker with id {self.id}')
         self.state = WorkerState.IDLE
         worker_registry.add(self, pipeline=pipeline)
         self._save(pipeline=pipeline)
@@ -395,7 +389,7 @@ class Worker:
         self.state = WorkerState.DEAD
         self.shutdown_at = utcnow()
         self._save(['state', 'shutdown_at'], pipeline=pipeline)
-        pipeline.expire(self.key, DEAD_WORKER_TTL)
+        pipeline.expire(self.key, settings.DEAD_WORKER_TTL)
 
     @atomic_pipeline
     def died(self, *, pipeline):
@@ -407,12 +401,12 @@ class Worker:
             task.handle_worker_death(pipeline=pipeline)
             self.current_task_id = None
         self._save(['state', 'current_task_id', 'shutdown_at'], pipeline=pipeline)
-        pipeline.expire(self.key, DEAD_WORKER_TTL)
+        pipeline.expire(self.key, settings.DEAD_WORKER_TTL)
 
     def set_shutdown_requested(self):
         self.shutdown_requested_at = utcnow()
-        self.connection.hset(self.key, 'shutdown_requested_at',
-                             utcformat(self.shutdown_requested_at))
+        connection.hset(self.key, 'shutdown_requested_at',
+                        utcformat(self.shutdown_requested_at))
 
     def fetch_current_task(self):
         """Returns the task id of the currently executing task."""

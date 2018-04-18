@@ -1,9 +1,11 @@
 from ..worker import TaskMiddleware
+from ..conf import settings
+from ..utils import import_attribute
 
 
 class SentryMiddleware(TaskMiddleware):
-    def __init__(self, client):
-        self.client = client
+    def __init__(self):
+        self.client = import_attribute(settings.SENTRY_INSTANCE)
 
     def before(self, task):
         self.client.context.activate()

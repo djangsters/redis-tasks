@@ -1,45 +1,39 @@
-from .connections import resolve_connection
 from .exceptions import (DequeueTimeout, NoSuchTaskError, DeserializationError)
-from .task import Task, TaskStatus
-from .utils import utcnow, parse_timeout, atomic_pipeline, decode_list
+from .task import Task
+from .utils import utcnow, atomic_pipeline, decode_list
+from .conf import connection, RedisKey
+from .registries import queue_registry
 
 
 class Queue(object):
-    redis_queue_namespace_prefix = 'rq:queue:'
     redis_queues_keys = 'rq:queues'
 
     def __init__(self, name='default'):
-        self.connection = resolve_connection()
         self.name = name
-        self._key = self.redis_queue_namespace_prefix + name
 
     @classmethod
     def all(cls):
         """Returns an iterable of all Queues."""
-        connection = resolve_connection()
+        return [cls(name) for name in queue_registry.get_names()]
 
-        return [cls.from_queue_key(rq_key.decode())
-                for rq_key in connection.smembers(cls.redis_queues_keys)
-                if rq_key]
+    @property
+    def key(self):
+        return self.key_for(self.name)
 
     @classmethod
-    def from_queue_key(cls, queue_key):
-        prefix = cls.redis_queue_namespace_prefix
-        if not queue_key.startswith(prefix):
-            raise ValueError('Not a valid RQ queue key: {0}'.format(queue_key))
-        name = queue_key[len(prefix):]
-        return cls(name)
+    def key_for(cls, queue_name):
+        return RedisKey('queue:' + queue_name)
 
     def count(self):
         """Returns a count of all messages in the queue."""
-        return self.connection.llen(self.key)
+        return connection.llen(self.key)
 
-    def empty(self):
+    @atomic_pipeline
+    def empty(self, *, pipeline):
         """Removes all messages on the queue."""
         script = b"""
             local prefix = "rq:task:"
             local q = KEYS[1]
-            local count = 0
             while true do
                 local task_id = redis.call("lpop", q)
                 if task_id == false then
@@ -48,17 +42,20 @@ class Queue(object):
 
                 -- Delete the task data
                 redis.call("del", prefix..task_id)
-                count = count + 1
             end
-            return count
         """
-        script = self.connection.register_script(script)
-        return script(keys=[self.key])
+        script = connection.register_script(script)
+        script(keys=[self.key], client=pipeline)
+
+    @atomic_pipeline
+    def delete(self, *, pipeline):
+        self.empty(pipeline=pipeline)
+        queue_registry.remove(self, pipeline=pipeline)
 
     def get_task_ids(self):
         """Return the task IDs in the queue."""
         return [task_id.decode() for task_id in
-                self.connection.lrange(self.key, 0, -1)]
+                connection.lrange(self.key, 0, -1)]
 
     def get_tasks(self):
         """Returns the tasks in the queue."""
@@ -82,8 +79,7 @@ class Queue(object):
         """Pushes a task id on the queue
 
         `at_front` inserts the task at the front instead of the back of the queue"""
-        # Add Queue key set
-        pipeline.sadd(self.redis_queues_keys, self.key)
+        queue_registry.add(self)
         if at_front:
             pipeline.lpush(self.key, task.id)
         else:
@@ -107,7 +103,6 @@ class Queue(object):
             None - non-blocking (return immediately)
              > 0 - maximum number of seconds to block
         """
-        connection = resolve_connection()
         if timeout is not None:  # blocking variant
             if timeout == 0:
                 raise ValueError('RQ does not support indefinite timeouts. Please pick a timeout value > 0')
@@ -140,12 +135,12 @@ class Queue(object):
             None - non-blocking (return immediately)
              > 0 - maximum number of seconds to block
         """
-        queue_keys = [q.key for q in queues]
-        result = cls.lpop(queue_keys, timeout)
+        queue_map = {q.key: q for q in queues}
+        result = cls.lpop(queue_map.keys(), timeout)
         if result is None:
             return None, None
         queue_key, task_id = decode_list(result)
-        queue = cls.from_queue_key(queue_key)
+        queue = queue_map[queue_key]
         try:
             task = Task.fetch(task_id)
         except (NoSuchTaskError, DeserializationError) as e:

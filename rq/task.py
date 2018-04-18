@@ -3,15 +3,14 @@ import uuid
 import sys
 import traceback
 
-from .connections import resolve_connection
-from .defaults import JOB_TIMEOUT
+from .conf import connection, settings, RedisKey
 from .exceptions import NoSuchTaskError, TaskAborted, ShutdownImminentException, WorkerDied, InvalidOperation
 from .queue import Queue
 from .registry import (failed_task_registry, finished_task_registry,
                        running_task_registry)
 from .serialization import deserialize, serialize
 from .utils import (enum, import_attribute, atomic_pipeline, utcformat, utcnow,
-                    utcparse)
+                    utcparse, LazyObject)
 
 TaskStatus = enum(
     'TaskStatus',
@@ -37,7 +36,13 @@ class TaskProperties:
         return f
 
 
-configured_middlewares = []  # TODO
+@LazyObject
+def task_middlewares():
+    return [import_attribute(x) for x in settings.TASK_MIDDLEWARES]
+
+
+def initialize_middlewares():
+    list(task_middlewares)
 
 
 class TaskMiddleware:
@@ -106,8 +111,6 @@ class TaskOutcome:
 class Task:
     def __init__(self, func=None, args=None, kwargs=None, *,
                  fetch_id=None, description=None, meta=None):
-        self.connection = resolve_connection()
-
         if fetch_id:
             self.id = fetch_id
             self.refresh()
@@ -232,7 +235,7 @@ class Task:
             self.delete_many([self.id], pipeline=pipeline)
             queue.remove(self, pipeline=pipeline)
 
-        self.connection.transaction(transaction, self.key)
+        connection.transaction(transaction, self.key)
 
     @atomic_pipeline
     def _set_status(self, status, *, pipeline):
@@ -257,26 +260,26 @@ class Task:
     @property
     def timeout(self):
         if self.func_properties.timeout is None:
-            return JOB_TIMEOUT
+            return settings.DEFAULT_TASK_TIMEOUT
         else:
             return self.func_properties.timeout
 
+    @property
+    def key(self):
+        return self.key_for(self.id)
+
     @classmethod
     def key_for(cls, task_id):
-        return 'rq:task:' + task_id
+        return RedisKey('task:' + task_id)
 
     @classmethod
     @atomic_pipeline
     def delete_many(cls, task_ids, *, pipeline):
         pipeline.delete(*(cls.key_for(task_id) for task_id in task_ids))
 
-    @property
-    def key(self):
-        return self.key_for(self.id)
-
     def refresh(self):
         key = self.key
-        obj = {k.decode(): v for k, v in self.connection.hgetall(key).items()}
+        obj = {k.decode(): v for k, v in connection.hgetall(key).items()}
         if len(obj) == 0:
             raise NoSuchTaskError('No such task: {0}'.format(key))
 
@@ -329,7 +332,7 @@ class Task:
         exc_info = []
         try:
             executed_middlewares = []
-            for middleware in configured_middlewares:
+            for middleware in task_middlewares:
                 executed_middlewares.append(middleware)
                 middleware.before(self)
             try:
@@ -350,7 +353,7 @@ class Task:
         return outcome
 
     def _generate_outcome(self, *exc_info):
-        for middleware in reversed(configured_middlewares):
+        for middleware in reversed(task_middlewares):
             try:
                 if middleware.process_outcome(self, *exc_info):
                     exc_info = []
