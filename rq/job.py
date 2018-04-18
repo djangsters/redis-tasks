@@ -1,9 +1,11 @@
 import inspect
 import uuid
+import sys
+import traceback
 
 from .connections import resolve_connection
 from .defaults import JOB_TIMEOUT
-from .exceptions import NoSuchJobError
+from .exceptions import NoSuchJobError, JobAborted, ShutdownImminentException, WorkerDied
 from .queue import Queue
 from .registry import (failed_job_registry, finished_job_registry,
                        running_job_registry)
@@ -33,6 +35,72 @@ class TaskProperties:
     def decorate(self, f):
         f._rq_job_properties = self
         return f
+
+
+configured_middlewares = []  # TODO
+
+
+class TaskMiddleware:
+    """Base class for a task execution middleware.
+
+    Before task execution, the `before()` methods are called in the order the
+    middlewares are listen in TODO[setting]. Any middleware can short-circuit
+    this process by raising an exception in the `before()` method. The following
+    `before()` method will then not be called.
+
+    Independently of whether the task ran or a middleware interupted the
+    startup, all configured middelwares' `process_outcome()` methods are called
+    after execution. If the worker running the task did not die and a
+    middleware's `before()` method was called for this task, the
+    `process_outcome()` method will be called on the same instance of the
+    middleware. Otherwise a new instance is created.
+
+    Finally, if the worker did not die, the `after()` method is called for all
+    middlewares that had their `before()` method called. This is guaranteed to
+    happen on the same instance. This is the right place to do process-local
+    cleanup.
+
+    The JobAborted exception has a special meaning in this context. It is raised
+    by rq if the job did not fail itself, but was aborted for external reasons.
+    It can also be raised by any middleware. If it is passed through or raised
+    by the outer-most middleware, reentrant tasks will be reenqueued at the
+    front of the queue they came from."""
+
+    def before(self, job):
+        """Is called before the job is started.
+
+        If this raises an exception, execution is canceled the job is treated as failed."""
+        pass
+
+    def process_outcome(self, job, exc_type=None, exc_val=None, exc_tb=None):
+        """Process the outcome of the job.
+
+        If the job failed, the three exc_ parameters will be set.
+        This can happen for the following reasons:
+        * The job raised an exception
+        * The worker shut down during execution
+        * The worked died unexpectedly during execution
+        * The job reached its timeout
+        * Another middleware raised an exception
+
+        Can return True to treat the job as succeeded.
+        Returning a non-true value (e.g. None), passes the current state on to
+        the next middleware.
+        Raising an exception passes the raised exception to the next middleware."""
+        pass
+
+    def after(self, job):
+        """Is called after `process_outcome`.
+
+        This function might not be called if the worker is exiting early"""
+        pass
+
+
+class JobOutcome:
+    def __init__(self, outcome, *, message=None):
+        assert outcome in ['success', 'failure', 'aborted']
+        self.outcome = outcome
+        self.message = message
 
 
 class Job:
@@ -143,15 +211,24 @@ class Job:
                 self.set_failed(outcome.message, pipeline=pipeline)
 
     @takes_pipeline
+    def handle_worker_death(self, *, pipeline):
+        assert self.status == JobStatus.RUNNING
+        try:
+            raise WorkerDied("Worker died")
+        except WorkerDied:
+            exc_info = sys.exc_info()
+        outcome = self._generate_outcome(*exc_info)
+        self.handle_outcome(outcome, pipeline=pipeline)
+
+    @takes_pipeline
     def cancel(self, *, pipeline):
         # TODO: check which state we are in and react accordingly
         # fail if the job is currently running
         # Need to do this in a transaction
         from .queue import Queue
-        if self.origin:
-            q = Queue(name=self.origin)
-            q.remove(self, pipeline=pipeline)
-            self.delete_many([self.id], pipeline=pipeline)
+        q = Queue(name=self.origin)
+        q.remove(self, pipeline=pipeline)
+        self.delete_many([self.id], pipeline=pipeline)
 
     @takes_pipeline
     def _set_status(self, status, *, pipeline):
@@ -244,8 +321,45 @@ class Job:
     def save_meta(self):
         self._save(['meta'])
 
-    def execute(self):
-        return self.func(*self.args, **self.kwargs)
+    def execute(self, pre_run=None, post_run=None):
+        exc_info = []
+        try:
+            executed_middlewares = []
+            for middleware in configured_middlewares:
+                executed_middlewares.append(middleware)
+                middleware.before(self)
+            try:
+                if pre_run:
+                    pre_run()
+                self.func(*self.args, **self.kwargs)
+                if post_run:
+                    post_run()
+            except ShutdownImminentException as e:
+                raise JobAborted("Worker shutdown") from e
+        except Exception:
+            exc_info = sys.exc_info()
+
+        outcome = self._generate_outcome(self, *exc_info)
+
+        for middleware in reversed(executed_middlewares):
+            middleware.after(self)
+        return outcome
+
+    def _generate_outcome(self, *exc_info):
+        for middleware in reversed(configured_middlewares):
+            try:
+                if middleware.process_outcome(self, *exc_info):
+                    exc_info = []
+            except Exception:
+                exc_info = sys.exc_info()
+
+        if not exc_info or not exc_info[0]:
+            return JobOutcome('success')
+        elif isinstance(exc_info[1], JobAborted):
+            return JobOutcome('aborted', message=exc_info[1].message)
+        else:
+            exc_string = ''.join(traceback.format_exception(*exc_info))
+            return JobOutcome('failure', message=exc_string)
 
     def get_call_string(self):
         """Returns a string representation of the call, formatted as a regular

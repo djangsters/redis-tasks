@@ -15,7 +15,7 @@ from .defaults import (DEAD_WORKER_TTL, MAINTENANCE_FREQ,
                        WORKER_HEARTBEAT_FREQ, WORKER_HEARTBEAT_TIMEOUT)
 from .exceptions import (DequeueTimeout, JobAborted, NoSuchWorkerError,
                          ShutdownImminentException, WorkerDied)
-from .job import Job
+from .job import Job, JobOutcome
 from .queue import Queue
 from .registry import expire_registries, worker_registry
 from .utils import enum, takes_pipeline, utcformat, utcnow, utcparse
@@ -75,98 +75,6 @@ WorkerStatus = enum(
 )
 
 
-class TaskMiddleware:
-    """Base class for a task execution middleware.
-
-    Before task execution, the `before()` methods are called in the order the
-    middlewares are listen in TODO[setting]. Any middleware can short-circuit
-    this process by returning True or raising an exception in the `before()`
-    method. The following `before()` method will then not be called.
-
-    Independently of whether the task ran or a middleware interupted the
-    startup, all configured middelwares' `process_outcome()` methods are called
-    after execution. If the worker running the task did not die and a
-    middleware's `before()` method was called for this task, the
-    `process_outcome()` method will be called on the same instance of the
-    middleware. Otherwise a new instance is created.
-
-    Finally, if the worker did not die, the `after()` method is called for all
-    middlewares that had their `before()` method called. This is guaranteed to
-    happen on the same instance. This is the right place to do process-local
-    cleanup.
-
-    The JobAborted exception has a special meaning in this context. It is raised
-    by rq if the job did not fail itself, but was aborted for external reasons.
-    It can also be raised by any middleware. If it is passed through or raised
-    by the outer-most middleware, reentrant tasks will be reenqueued at the
-    front of the queue they came from."""
-
-    def before(self, job):
-        """Is called before the job is started.
-
-        Can return True to stop execution and treat the job as succeeded.
-        Can raise an exception to stop execution and treat the job as failed."""
-        pass
-
-    def process_outcome(self, job, exc_type=None, exc_val=None, exc_tb=None):
-        """Process the outcome of the job.
-
-        If the job failed to succeed, the three exc_ parameters will be set.
-        This can happen for the following reasons:
-        * The job raised an exception
-        * The worker shut down during execution
-        * The worked died unexpectedly during execution
-        * The job reached its timeout
-        * Another middleware raised an exception
-
-        Can return True to treat the job as succeeded.
-        Returning a non-true value (e.g. None), passes the current state on to
-        the next middleware.
-        Raising an exception passes the raised exception to the next middleware."""
-        pass
-
-    def after(self, job):
-        """Is called after `process_outcome`.
-
-        This function might not be called if the worker is exiting early"""
-        pass
-
-
-class JobOutcome:
-    def __init__(self, outcome, *, message=None):
-        assert outcome in ['success', 'failure', 'aborted']
-        self.outcome = outcome
-        self.message = message
-
-    @classmethod
-    def from_job_result(cls, job, *exc_info):
-        for middleware in reversed(configured_middlewares):
-            try:
-                if middleware.process_outcome(job, *exc_info):
-                    exc_info = []
-            except Exception:
-                exc_info = sys.exc_info()
-
-        if not exc_info or not exc_info[0]:
-            return cls('success')
-        elif isinstance(exc_info[1], JobAborted):
-            return cls('aborted', message=exc_info[1].message)
-        else:
-            exc_string = ''.join(traceback.format_exception(*exc_info))
-            return cls('failure', message=exc_string)
-
-    @classmethod
-    def for_worker_died(cls, job):
-        try:
-            raise WorkerDied("Worker died")
-        except WorkerDied:
-            exc_info = sys.exc_info()
-        return cls.from_job_result(job, *exc_info)
-
-
-configured_middlewares = []  # TODO: middleware config
-
-
 class WorkHorse(multiprocessing.Process):
     def run(self, job, worker_connection):
         cs = CriticalSection()
@@ -174,31 +82,8 @@ class WorkHorse(multiprocessing.Process):
         self.setup_signal_handler()
         worker_connection.send(True)
 
-        exc_info = []
-        executed_middleware = []
-        skip_job = False
-
-        for middleware in configured_middlewares:
-            executed_middleware.append(middleware)
-            if middleware.before(job):
-                skip_job = True
-                break
-
-        try:
-            try:
-                cs.exit()
-                if not skip_job:
-                    job.execute()
-                self.ignore_shutdown_signal()
-            except ShutdownImminentException as e:
-                raise JobAborted("Worker shutdown") from e
-        except Exception:
-            exc_info = sys.exc_info()
-
-        worker_connection.send(JobOutcome.from_job_result(job, *exc_info))
-
-        for middleware in reversed(executed_middleware):
-            middleware.after(job)
+        outcome = job.execute(pre_run=cs.exit, post_run=self.ignore_shutdown_signal)
+        worker_connection.send(outcome)
 
     def setup_signal_handler(self):
         _local.critical_section = 0
@@ -362,14 +247,6 @@ class WorkerProcess:
             self.in_receive_shutdown -= 1
 
 
-class SimpleWorker(WorkerProcess):
-    def execute_job(self, *args, **kwargs):
-        """Execute job in same thread/process, do not fork()"""
-        # TODO: copy some stuff from the workhorse – or maybe initiate an
-        # instance and just run in it in ths process?
-        return self.perform_job(*args, **kwargs)
-
-
 class Maintenance:
     def __init__(self):
         self.last_run_at = None
@@ -384,11 +261,11 @@ class Maintenance:
         if self.connection.setnx(self.key, utcnow()):
             self.connection.expire(self.key, MAINTENANCE_FREQ)
             self.run()
-        else:
-            value = self.connection.get(self.key)
-            # might be None since time has passed between SETNX and GET
-            if value:
-                self.last_run_at = utcparse(value)
+
+        redis_value = self.connection.get(self.key)
+        # might have expired between a failed SETNX and the GET
+        if redis_value:
+            self.last_run_at = utcparse(redis_value)
 
     def handle_dead_workers(self):
         dead_worker_ids = worker_registry.get_dead_ids(self)
@@ -526,8 +403,7 @@ class Worker:
         self.shutdown_at = utcnow()
         if self.current_job_id:
             job = Job.fetch(self.current_job_id)
-            outcome = JobOutcome.for_worker_died(job)
-            job.handle_outcome(outcome, pipeline=pipeline)
+            job.handle_worker_death(pipeline=pipeline)
             self.current_job_id = None
         self._save(['state', 'current_job_id', 'shutdown_at'], pipeline=pipeline)
         pipeline.expire(self.key, DEAD_WORKER_TTL)

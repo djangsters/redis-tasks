@@ -8,11 +8,10 @@ class Queue(object):
     redis_queue_namespace_prefix = 'rq:queue:'
     redis_queues_keys = 'rq:queues'
 
-    def __init__(self, name='default', async=True):
+    def __init__(self, name='default'):
         self.connection = resolve_connection()
         self.name = name
         self._key = self.redis_queue_namespace_prefix + name
-        self._async = async
 
     @classmethod
     def all(cls):
@@ -83,23 +82,16 @@ class Queue(object):
         """Pushes a job id on the queue
 
         `at_front` inserts the job at the front instead of the back of the queue"""
-        if self._async:
-            # Add Queue key set
-            pipeline.sadd(self.redis_queues_keys, self.key)
-            if at_front:
-                pipeline.lpush(self.key, job.id)
-            else:
-                pipeline.rpush(self.key, job.id)
+        # Add Queue key set
+        pipeline.sadd(self.redis_queues_keys, self.key)
+        if at_front:
+            pipeline.lpush(self.key, job.id)
         else:
-            job.perform()
-            job.set_status(JobStatus.FINISHED, pipeline=pipeline)
-            job.delete(remove_from_queue=False, pipeline=pipeline)
+            pipeline.rpush(self.key, job.id)
 
     @takes_pipeline
     def enqueue_call(self, *args, pipeline, **kwargs):
-        """Creates a job to represent the delayed function call and enqueues it.
-
-        If Queue is instantiated with async=False, job is executed immediately."""
+        """Creates a job to represent the delayed function call and enqueues it."""
         job = Job(*args, **kwargs)
         job.enqeue(self, pipeline=pipeline)
         return job
