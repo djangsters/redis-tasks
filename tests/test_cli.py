@@ -5,7 +5,7 @@ from __future__ import (absolute_import, division, print_function,
 from click.testing import CliRunner
 from rq import get_failed_queue, Queue
 from rq.compat import is_python_version
-from rq.job import Job
+from rq.task import Task
 from rq.cli import main
 from rq.cli.helpers import read_config_file, CliConfig
 import pytest
@@ -41,10 +41,10 @@ class TestRQCli(RQTestCase):
         db_num = self.testconn.connection_pool.connection_kwargs['db']
         self.redis_url = 'redis://127.0.0.1:6379/%d' % db_num
 
-        job = Job.create(func=div_by_zero, args=(1, 2, 3))
-        job.origin = 'fake'
-        job.save()
-        get_failed_queue().quarantine(job, Exception('Some fake error'))  # noqa
+        task = Task.create(func=div_by_zero, args=(1, 2, 3))
+        task.origin = 'fake'
+        task.save()
+        get_failed_queue().quarantine(task, Exception('Some fake error'))  # noqa
 
     def test_config_file(self):
         settings = read_config_file('tests.dummy_settings')
@@ -74,21 +74,21 @@ class TestRQCli(RQTestCase):
         runner = CliRunner()
         result = runner.invoke(main, ['empty', '-u', self.redis_url, 'failed'])
         self.assert_normal_execution(result)
-        self.assertEqual(result.output.strip(), '1 jobs removed from failed queue')
+        self.assertEqual(result.output.strip(), '1 tasks removed from failed queue')
 
     def test_empty_all(self):
         """rq empty -u <url> failed --all"""
         runner = CliRunner()
         result = runner.invoke(main, ['empty', '-u', self.redis_url, '--all'])
         self.assert_normal_execution(result)
-        self.assertEqual(result.output.strip(), '1 jobs removed from failed queue')
+        self.assertEqual(result.output.strip(), '1 tasks removed from failed queue')
 
     def test_requeue(self):
         """rq requeue -u <url> --all"""
         runner = CliRunner()
         result = runner.invoke(main, ['requeue', '-u', self.redis_url, '--all'])
         self.assert_normal_execution(result)
-        self.assertEqual(result.output.strip(), 'Requeueing 1 jobs from failed queue')
+        self.assertEqual(result.output.strip(), 'Requeueing 1 tasks from failed queue')
 
         result = runner.invoke(main, ['requeue', '-u', self.redis_url, '--all'])
         self.assert_normal_execution(result)
@@ -99,14 +99,14 @@ class TestRQCli(RQTestCase):
         runner = CliRunner()
         result = runner.invoke(main, ['info', '-u', self.redis_url])
         self.assert_normal_execution(result)
-        self.assertIn('1 queues, 1 jobs total', result.output)
+        self.assertIn('1 queues, 1 tasks total', result.output)
 
     def test_info_only_queues(self):
         """rq info -u <url> --only-queues (-Q)"""
         runner = CliRunner()
         result = runner.invoke(main, ['info', '-u', self.redis_url, '--only-queues'])
         self.assert_normal_execution(result)
-        self.assertIn('1 queues, 1 jobs total', result.output)
+        self.assertIn('1 queues, 1 tasks total', result.output)
 
     def test_info_only_workers(self):
         """rq info -u <url> --only-workers (-W)"""
@@ -137,12 +137,12 @@ class TestRQCli(RQTestCase):
 
         runner = CliRunner()
 
-        # If exception handler is not given, failed job goes to FailedQueue
+        # If exception handler is not given, failed task goes to FailedQueue
         q.enqueue(div_by_zero)
         runner.invoke(main, ['worker', '-u', self.redis_url, '-b'])
         self.assertEqual(failed_q.count, 1)
 
-        # Black hole exception handler doesn't add failed jobs to FailedQueue
+        # Black hole exception handler doesn't add failed tasks to FailedQueue
         q.enqueue(div_by_zero)
         runner.invoke(main, ['worker', '-u', self.redis_url, '-b',
                              '--exception-handler', 'tests.fixtures.black_hole'])

@@ -1,14 +1,14 @@
-class JobAborted(Exception):
+class TaskAborted(Exception):
     def __init__(self, message):
         super().__init__(message)
         self.message = message
 
 
-class WorkerDied(JobAborted):
+class WorkerDied(TaskAborted):
     pass
 
 
-class NoSuchJobError(Exception):
+class NoSuchTaskError(Exception):
     pass
 
 

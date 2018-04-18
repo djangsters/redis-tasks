@@ -5,16 +5,16 @@ import traceback
 
 from .connections import resolve_connection
 from .defaults import JOB_TIMEOUT
-from .exceptions import NoSuchJobError, JobAborted, ShutdownImminentException, WorkerDied
+from .exceptions import NoSuchTaskError, TaskAborted, ShutdownImminentException, WorkerDied
 from .queue import Queue
-from .registry import (failed_job_registry, finished_job_registry,
-                       running_job_registry)
+from .registry import (failed_task_registry, finished_task_registry,
+                       running_task_registry)
 from .serialization import deserialize, serialize
 from .utils import (enum, import_attribute, takes_pipeline, utcformat, utcnow,
                     utcparse)
 
-JobStatus = enum(
-    'JobStatus',
+TaskStatus = enum(
+    'TaskStatus',
     QUEUED='queued',
     FINISHED='finished',
     FAILED='failed',
@@ -33,7 +33,7 @@ class TaskProperties:
         self.timeout = timeout
 
     def decorate(self, f):
-        f._rq_job_properties = self
+        f._rq_task_properties = self
         return f
 
 
@@ -60,50 +60,50 @@ class TaskMiddleware:
     happen on the same instance. This is the right place to do process-local
     cleanup.
 
-    The JobAborted exception has a special meaning in this context. It is raised
-    by rq if the job did not fail itself, but was aborted for external reasons.
+    The TaskAborted exception has a special meaning in this context. It is raised
+    by rq if the task did not fail itself, but was aborted for external reasons.
     It can also be raised by any middleware. If it is passed through or raised
     by the outer-most middleware, reentrant tasks will be reenqueued at the
     front of the queue they came from."""
 
-    def before(self, job):
-        """Is called before the job is started.
+    def before(self, task):
+        """Is called before the task is started.
 
-        If this raises an exception, execution is canceled the job is treated as failed."""
+        If this raises an exception, execution is canceled the task is treated as failed."""
         pass
 
-    def process_outcome(self, job, exc_type=None, exc_val=None, exc_tb=None):
-        """Process the outcome of the job.
+    def process_outcome(self, task, exc_type=None, exc_val=None, exc_tb=None):
+        """Process the outcome of the task.
 
-        If the job failed, the three exc_ parameters will be set.
+        If the task failed, the three exc_ parameters will be set.
         This can happen for the following reasons:
-        * The job raised an exception
+        * The task raised an exception
         * The worker shut down during execution
         * The worked died unexpectedly during execution
-        * The job reached its timeout
+        * The task reached its timeout
         * Another middleware raised an exception
 
-        Can return True to treat the job as succeeded.
+        Can return True to treat the task as succeeded.
         Returning a non-true value (e.g. None), passes the current state on to
         the next middleware.
         Raising an exception passes the raised exception to the next middleware."""
         pass
 
-    def after(self, job):
+    def after(self, task):
         """Is called after `process_outcome`.
 
         This function might not be called if the worker is exiting early"""
         pass
 
 
-class JobOutcome:
+class TaskOutcome:
     def __init__(self, outcome, *, message=None):
         assert outcome in ['success', 'failure', 'aborted']
         self.outcome = outcome
         self.message = message
 
 
-class Job:
+class Task:
     def __init__(self, func=None, args=None, kwargs=None, *,
                  fetch_id=None, description=None, meta=None):
         self.connection = resolve_connection()
@@ -123,7 +123,7 @@ class Job:
         else:
             raise TypeError('Expected a function or string, but got: {0}'.format(func))
         if self.func_name.startswith('__main__'):
-            raise ValueError("The job's function needs to be importable by the workers")
+            raise ValueError("The task's function needs to be importable by the workers")
 
         if args is None:
             args = ()
@@ -155,45 +155,45 @@ class Job:
     @takes_pipeline
     def enqueue(self, queue, *, pipeline):
         assert self.status is None
-        self.status = JobStatus.QUEUED
+        self.status = TaskStatus.QUEUED
         self.origin = queue.name
         self.enqueued_at = utcnow()
         self._save(pipeline=pipeline)
-        queue.push_job(self, pipeline=pipeline)
+        queue.push_task(self, pipeline=pipeline)
 
     @takes_pipeline
     def requeue(self, *, pipeline):
-        assert self.status is JobStatus.RUNNING
-        running_job_registry.remove(self, pipeline=pipeline)
-        Queue(self.origin).push_job(self, at_front=True, pipeline=pipeline)
-        self.status = JobStatus.QUEUED
+        assert self.status is TaskStatus.RUNNING
+        running_task_registry.remove(self, pipeline=pipeline)
+        Queue(self.origin).push_task(self, at_front=True, pipeline=pipeline)
+        self.status = TaskStatus.QUEUED
         self.aborted_runs.append((self.started_at, utcnow()))
         self.started_at = None
         self._save(['status', 'aborted_runs', 'started_at'], pipeline=pipeline)
 
     @takes_pipeline
     def set_running(self, worker, *, pipeline):
-        assert self.status == JobStatus.QUEUED
-        running_job_registry.add(self, worker, pipeline=pipeline)
-        self.status = JobStatus.RUNNING
+        assert self.status == TaskStatus.QUEUED
+        running_task_registry.add(self, worker, pipeline=pipeline)
+        self.status = TaskStatus.RUNNING
         self.started_at = utcnow()
         self._save(['status', 'started_at'], pipeline=pipeline)
 
     @takes_pipeline
     def set_finished(self, *, pipeline):
-        assert self.status == JobStatus.RUNNING
-        running_job_registry.remove(self, pipeline=pipeline)
-        finished_job_registry.add(self, pipeline=pipeline)
-        self.status = JobStatus.FINISHED
+        assert self.status == TaskStatus.RUNNING
+        running_task_registry.remove(self, pipeline=pipeline)
+        finished_task_registry.add(self, pipeline=pipeline)
+        self.status = TaskStatus.FINISHED
         self.ended_at = utcnow()
         self._save(['status', 'ended_at'], pipeline=pipeline)
 
     @takes_pipeline
     def set_failed(self, error_message, *, pipeline):
-        assert self.status == JobStatus.RUNNING
-        running_job_registry.remove(self, pipeline=pipeline)
-        failed_job_registry.add(self, pipeline=pipeline)
-        self.status = JobStatus.FAILED
+        assert self.status == TaskStatus.RUNNING
+        running_task_registry.remove(self, pipeline=pipeline)
+        failed_task_registry.add(self, pipeline=pipeline)
+        self.status = TaskStatus.FAILED
         self.error_message = error_message
         self.ended_at = utcnow()
         self._save(['status', 'error_message', 'ended_at'], pipeline=pipeline)
@@ -212,7 +212,7 @@ class Job:
 
     @takes_pipeline
     def handle_worker_death(self, *, pipeline):
-        assert self.status == JobStatus.RUNNING
+        assert self.status == TaskStatus.RUNNING
         try:
             raise WorkerDied("Worker died")
         except WorkerDied:
@@ -223,7 +223,7 @@ class Job:
     @takes_pipeline
     def cancel(self, *, pipeline):
         # TODO: check which state we are in and react accordingly
-        # fail if the job is currently running
+        # fail if the task is currently running
         # Need to do this in a transaction
         from .queue import Queue
         q = Queue(name=self.origin)
@@ -241,8 +241,8 @@ class Job:
 
     @property
     def func_properties(self):
-        if hasattr(self.func, '_rq_job_properties'):
-            return self.func._rq_job_properties
+        if hasattr(self.func, '_rq_task_properties'):
+            return self.func._rq_task_properties
         else:
             return TaskProperties()
 
@@ -258,13 +258,13 @@ class Job:
             return self.func_properties.timeout
 
     @classmethod
-    def key_for(cls, job_id):
-        return 'rq:job:' + job_id
+    def key_for(cls, task_id):
+        return 'rq:task:' + task_id
 
     @classmethod
     @takes_pipeline
-    def delete_many(cls, job_ids, *, pipeline):
-        pipeline.delete(*(cls.key_for(job_id) for job_id in job_ids))
+    def delete_many(cls, task_ids, *, pipeline):
+        pipeline.delete(*(cls.key_for(task_id) for task_id in task_ids))
 
     @property
     def key(self):
@@ -274,14 +274,14 @@ class Job:
         key = self.key
         obj = {k.decode(): v for k, v in self.connection.hgetall(key).items()}
         if len(obj) == 0:
-            raise NoSuchJobError('No such job: {0}'.format(key))
+            raise NoSuchTaskError('No such task: {0}'.format(key))
 
         try:
             self.func_name = obj['func_name'].decode()
             self._args = deserialize(obj['args'])
             self._kwargs = deserialize(obj['kwargs'])
         except KeyError:
-            raise NoSuchJobError('Unexpected job format: {0}'.format(obj))
+            raise NoSuchTaskError('Unexpected task format: {0}'.format(obj))
 
         for key in ['status', 'origin', 'description', 'error_message']:
             setattr(self, key, obj[key].decode() if key in obj else None)
@@ -335,7 +335,7 @@ class Job:
                 if post_run:
                     post_run()
             except ShutdownImminentException as e:
-                raise JobAborted("Worker shutdown") from e
+                raise TaskAborted("Worker shutdown") from e
         except Exception:
             exc_info = sys.exc_info()
 
@@ -354,12 +354,12 @@ class Job:
                 exc_info = sys.exc_info()
 
         if not exc_info or not exc_info[0]:
-            return JobOutcome('success')
-        elif isinstance(exc_info[1], JobAborted):
-            return JobOutcome('aborted', message=exc_info[1].message)
+            return TaskOutcome('success')
+        elif isinstance(exc_info[1], TaskAborted):
+            return TaskOutcome('aborted', message=exc_info[1].message)
         else:
             exc_string = ''.join(traceback.format_exception(*exc_info))
-            return JobOutcome('failure', message=exc_string)
+            return TaskOutcome('failure', message=exc_string)
 
     def get_call_string(self):
         """Returns a string representation of the call, formatted as a regular

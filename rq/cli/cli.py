@@ -39,10 +39,10 @@ shared_options = [
                  envvar='RQ_WORKER_CLASS',
                  default=DEFAULT_WORKER_CLASS,
                  help='RQ Worker class to use'),
-    click.option('--job-class', '-j',
+    click.option('--task-class', '-j',
                  envvar='RQ_JOB_CLASS',
                  default=DEFAULT_JOB_CLASS,
-                 help='RQ Job class to use'),
+                 help='RQ Task class to use'),
     click.option('--queue-class',
                  envvar='RQ_QUEUE_CLASS',
                  default=DEFAULT_QUEUE_CLASS,
@@ -84,11 +84,11 @@ def empty(cli_config, all, queues, **options):
 
     if all:
         queues = cli_config.queue_class.all(connection=cli_config.connection,
-                                            job_class=cli_config.job_class)
+                                            task_class=cli_config.task_class)
     else:
         queues = [cli_config.queue_class(queue,
                                          connection=cli_config.connection,
-                                         job_class=cli_config.job_class)
+                                         task_class=cli_config.task_class)
                   for queue in queues]
 
     if not queues:
@@ -96,8 +96,8 @@ def empty(cli_config, all, queues, **options):
         sys.exit(0)
 
     for queue in queues:
-        num_jobs = queue.empty()
-        click.echo('{0} jobs removed from {1} queue'.format(num_jobs, queue.name))
+        num_tasks = queue.empty()
+        click.echo('{0} tasks removed from {1} queue'.format(num_tasks, queue.name))
 
 
 @main.command()
@@ -175,13 +175,13 @@ def worker(cli_config, burst, name, path, results_ttl,
 
         queues = [cli_config.queue_class(queue,
                                          connection=cli_config.connection,
-                                         job_class=cli_config.job_class)
+                                         task_class=cli_config.task_class)
                   for queue in queues]
         worker = cli_config.worker_class(queues,
                                          name=name,
                                          connection=cli_config.connection,
                                          default_worker_ttl=worker_ttl,
-                                         job_class=cli_config.job_class,
+                                         task_class=cli_config.task_class,
                                          queue_class=cli_config.queue_class,
                                          exception_handlers=exception_handlers or None)
 

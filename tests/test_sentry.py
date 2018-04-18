@@ -18,12 +18,12 @@ class FakeSentry(object):
 class TestSentry(RQTestCase):
 
     def test_work_fails(self):
-        """Non importable jobs should be put on the failed queue event with sentry"""
+        """Non importable tasks should be put on the failed queue event with sentry"""
         q = Queue()
         failed_q = get_failed_queue()
 
         # Action
-        q.enqueue('_non.importable.job')
+        q.enqueue('_non.importable.task')
         self.assertEqual(q.count, 1)
 
         w = Worker([q])

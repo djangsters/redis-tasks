@@ -1,5 +1,5 @@
 """
-rq is a simple, lightweight, library for creating background jobs, and
+rq is a simple, lightweight, library for creating background tasks, and
 processing them.
 """
 import sys
@@ -34,7 +34,7 @@ setup(
     author='Vincent Driessen',
     author_email='vincent@3rdcloud.com',
     description='RQ is a simple, lightweight, library for creating background '
-                'jobs, and processing them.',
+                'tasks, and processing them.',
     long_description=__doc__,
     packages=find_packages(exclude=['tests']),
     include_package_data=True,

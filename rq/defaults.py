@@ -1,4 +1,4 @@
-DEFAULT_JOB_CLASS = 'rq.job.Job'
+DEFAULT_JOB_CLASS = 'rq.task.Task'
 DEFAULT_QUEUE_CLASS = 'rq.Queue'
 DEFAULT_WORKER_CLASS = 'rq.Worker'
 DEFAULT_CONNECTION_CLASS = 'redis.StrictRedis'

@@ -1,6 +1,6 @@
 from .connections import resolve_connection
 from .exceptions import NoSuchWorkerError
-from .job import Job
+from .task import Task
 from .utils import current_timestamp, takes_pipeline, decode_list
 from .defaults import REGISTRIES_TTL, WORKER_HEARTBEAT_TIMEOUT
 
@@ -14,52 +14,52 @@ class ExpiringRegistry:
         self.connection = resolve_connection()
 
     @takes_pipeline
-    def add(self, job, *, pipeline):
-        pipeline.zadd(self.key, current_timestamp(), job.id)
+    def add(self, task, *, pipeline):
+        pipeline.zadd(self.key, current_timestamp(), task.id)
 
-    def get_job_ids(self):
+    def get_task_ids(self):
         return decode_list(self.connection.zrange(self.key, 0, -1))
 
     @takes_pipeline
     def expire(self, *, pipeline):
-        """Remove expired jobs from registry."""
+        """Remove expired tasks from registry."""
         cutoff_time = current_timestamp() - REGISTRIES_TTL
-        expired_job_ids = decode_list(self.connection.zrangebyscore(
+        expired_task_ids = decode_list(self.connection.zrangebyscore(
             self.zkey, 0, cutoff_time))
-        Job.delete_many(expired_job_ids, pipeline=pipeline)
+        Task.delete_many(expired_task_ids, pipeline=pipeline)
         self.connection.zremrangebyscore(self.zkey, 0, cutoff_time)
 
 
-finished_job_registry = ExpiringRegistry('finished')
-failed_job_registry = ExpiringRegistry('failed')
+finished_task_registry = ExpiringRegistry('finished')
+failed_task_registry = ExpiringRegistry('failed')
 
 
 def expire_registries():
-    finished_job_registry.expire()
-    failed_job_registry.expire()
+    finished_task_registry.expire()
+    failed_task_registry.expire()
 
 
-class RunningJobRegistry:
+class RunningTaskRegistry:
     def __init__(self):
         self.key = self.key_template.format('running')
         self.connection = resolve_connection()
 
     @takes_pipeline
-    def add(self, job, worker, *, pipeline):
-        pipeline.hset(self.key, job.id, worker.id)
+    def add(self, task, worker, *, pipeline):
+        pipeline.hset(self.key, task.id, worker.id)
 
     @takes_pipeline
-    def remove(self, job, *, pipeline):
-        pipeline.hdel(self.key, job.id)
+    def remove(self, task, *, pipeline):
+        pipeline.hdel(self.key, task.id)
 
-    def count(self, job):
+    def count(self, task):
         return self.connection.hlen(self.key)
 
-    def __some_getall(self, job):
+    def __some_getall(self, task):
         return self.connection.hgetall(self.key)
 
 
-running_job_registry = RunningJobRegistry()
+running_task_registry = RunningTaskRegistry()
 
 
 class WorkerRegistry:

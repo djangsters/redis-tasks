@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-This file contains all jobs that are used in tests.  Each of these test
+This file contains all tasks that are used in tests.  Each of these test
 fixtures has a slighty different characteristics.
 """
 from __future__ import (absolute_import, division, print_function,
@@ -10,8 +10,8 @@ import os
 import time
 import sys
 
-from rq import Connection, get_current_job, get_current_connection, Queue
-from rq.decorators import job
+from rq import Connection, get_current_task, get_current_connection, Queue
+from rq.decorators import task
 from rq.compat import PY2
 from rq.worker import HerokuWorker
 
@@ -21,19 +21,19 @@ def say_pid():
 
 
 def say_hello(name=None):
-    """A job with a single argument and a return value."""
+    """A task with a single argument and a return value."""
     if name is None:
         name = 'Stranger'
     return 'Hi there, %s!' % (name,)
 
 
 def say_hello_unicode(name=None):
-    """A job with a single argument and a return value."""
+    """A task with a single argument and a return value."""
     return unicode(say_hello(name))
 
 
 def do_nothing():
-    """The best job in the world."""
+    """The best task in the world."""
     pass
 
 
@@ -51,7 +51,7 @@ def some_calculation(x, y, z=1):
 
 def create_file(path):
     """Creates a file at the given path.  Actually, leaves evidence that the
-    job ran."""
+    task ran."""
     with open(path, 'w') as f:
         f.write('Just a sentinel.')
 
@@ -63,17 +63,17 @@ def create_file_after_timeout(path, timeout):
 
 def access_self():
     assert get_current_connection() is not None
-    assert get_current_job() is not None
+    assert get_current_task() is not None
 
 
 def modify_self(meta):
-    j = get_current_job()
+    j = get_current_task()
     j.meta.update(meta)
     j.save()
 
 
 def modify_self_and_error(meta):
-    j = get_current_job()
+    j = get_current_task()
     j.meta.update(meta)
     j.save()
     return 1 / 0
@@ -109,24 +109,24 @@ class UnicodeStringObject(object):
 
 
 with Connection():
-    @job(queue='default')
-    def decorated_job(x, y):
+    @task(queue='default')
+    def decorated_task(x, y):
         return x + y
 
 
-def black_hole(job, *exc_info):
+def black_hole(task, *exc_info):
     # Don't fall through to default behaviour (moving to failed queue)
     return False
 
 
-def long_running_job(timeout=10):
+def long_running_task(timeout=10):
     time.sleep(timeout)
     return 'Done sleeping...'
 
 
 def run_dummy_heroku_worker(sandbox, _imminent_shutdown_delay):
     """
-    Run the work horse for a simplified heroku worker where perform_job just
+    Run the work horse for a simplified heroku worker where perform_task just
     creates two sentinel files 2 seconds apart.
     :param sandbox: directory to create files in
     :param _imminent_shutdown_delay: delay to use for HerokuWorker
@@ -136,7 +136,7 @@ def run_dummy_heroku_worker(sandbox, _imminent_shutdown_delay):
     class TestHerokuWorker(HerokuWorker):
         imminent_shutdown_delay = _imminent_shutdown_delay
 
-        def perform_job(self, job, queue):
+        def perform_task(self, task, queue):
             create_file(os.path.join(sandbox, 'started'))
             # have to loop here rather than one sleep to avoid holding the GIL
             # and preventing signals being received

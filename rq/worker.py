@@ -13,9 +13,9 @@ from datetime import timedelta
 from .connections import get_current_connection
 from .defaults import (DEAD_WORKER_TTL, MAINTENANCE_FREQ,
                        WORKER_HEARTBEAT_FREQ, WORKER_HEARTBEAT_TIMEOUT)
-from .exceptions import (DequeueTimeout, JobAborted, NoSuchWorkerError,
+from .exceptions import (DequeueTimeout, TaskAborted, NoSuchWorkerError,
                          ShutdownImminentException, WorkerDied)
-from .job import Job, JobOutcome
+from .task import Task, TaskOutcome
 from .queue import Queue
 from .registry import expire_registries, worker_registry
 from .utils import enum, takes_pipeline, utcformat, utcnow, utcparse
@@ -76,13 +76,13 @@ WorkerStatus = enum(
 
 
 class WorkHorse(multiprocessing.Process):
-    def run(self, job, worker_connection):
+    def run(self, task, worker_connection):
         cs = CriticalSection()
         cs.enter()
         self.setup_signal_handler()
         worker_connection.send(True)
 
-        outcome = job.execute(pre_run=cs.exit, post_run=self.ignore_shutdown_signal)
+        outcome = task.execute(pre_run=cs.exit, post_run=self.ignore_shutdown_signal)
         worker_connection.send(outcome)
 
     def setup_signal_handler(self):
@@ -100,7 +100,7 @@ class WorkHorse(multiprocessing.Process):
             self.log.warning('Delaying ShutdownImminentException till critical section is finished')
             _local.raise_shutdown = True
         else:
-            self.log.warning('Raising ShutdownImminentException to cancel job')
+            self.log.warning('Raising ShutdownImminentException to cancel task')
             raise ShutdownImminentException()
 
     def send_signal(self, sig):
@@ -129,24 +129,24 @@ class WorkerProcess:
     def run(self, burst=False):
         """Starts the work loop.
 
-        Returns the number of jobs that were processed in burst mode"""
+        Returns the number of tasks that were processed in burst mode"""
         self.install_signal_handlers()
         self.worker.startup()
         self.log.info("RQ worker {0!r} started, version {1}".format(self.key, VERSION))
 
         try:
-            jobs_processed = 0
-            for job in self.job_queue_iter(burst):
-                # TODO: The job is in limbo in this moment. If the process
+            tasks_processed = 0
+            for task in self.task_queue_iter(burst):
+                # TODO: The task is in limbo in this moment. If the process
                 # crashes here, we lose track of it.
-                self.process_job(job)
-                jobs_processed += 1
+                self.process_task(task)
+                tasks_processed += 1
 
                 self.worker.heartbeat()
                 self.maintenance.run_if_neccessary()
             else:
                 self.log.info("Burst finished, quitting")
-                return jobs_processed
+                return tasks_processed
         finally:
             self.worker.shutdown()
 
@@ -159,45 +159,45 @@ class WorkerProcess:
             try:
                 timeout = None if burst else WORKER_HEARTBEAT_FREQ
                 with self.receive_shutdown():
-                    job, queue = Queue.dequeue_any(self.queues, timeout)
+                    task, queue = Queue.dequeue_any(self.queues, timeout)
             except DequeueTimeout:
                 continue
-            if burst and job is None:
+            if burst and task is None:
                 break
-            yield job
+            yield task
 
-    def process_job(self, job):
+    def process_task(self, task):
         with self.connection.pipeline() as pipeline:
-            self.worker.start_job(job, pipeline=pipeline)
-            job.set_running(self, pipeline=pipeline)
+            self.worker.start_task(task, pipeline=pipeline)
+            task.set_running(self, pipeline=pipeline)
 
-        self.log.info('{0}: {1} ({2})'.format(job.origin, job.description, job.id))
+        self.log.info('{0}: {1} ({2})'.format(task.origin, task.description, task.id))
         try:
-            outcome = self.execute_job(job)
+            outcome = self.execute_task(task)
         except Exception:
             exc_string = ''.join(traceback.format_exception(*sys.exc_info()))
-            outcome = JobOutcome('failure', error_message=exc_string)
+            outcome = TaskOutcome('failure', error_message=exc_string)
 
         with self.connection.pipeline() as pipeline:
-            self.worker.end_job(job, pipeline=pipeline)
-            job.handle_outcome(outcome, pipeline=pipeline)
+            self.worker.end_task(task, pipeline=pipeline)
+            task.handle_outcome(outcome, pipeline=pipeline)
 
-        self.log.info('{0}: {1} ({2})'.format(job.origin, 'Job OK', job.id))
+        self.log.info('{0}: {1} ({2})'.format(task.origin, 'Task OK', task.id))
         return True
 
-    def execute_job(self, job):
-        timeout_at = utcnow() + timedelta(seconds=job.timeout)
+    def execute_task(self, task):
+        timeout_at = utcnow() + timedelta(seconds=task.timeout)
         work_horse = WorkHorse()
         work_horse.daemon = True
         horse_connection, writer = multiprocessing.Pipe(duplex=False)
         outcome = None
         try:
-            work_horse.start(job, writer)
+            work_horse.start(task, writer)
             # Wait for horse to set up its signal handling
             if horse_connection.poll(5):
                 horse_connection.read()
             else:
-                return JobOutcome('aborted', "Workhorse failed to start")
+                return TaskOutcome('aborted', "Workhorse failed to start")
             while work_horse.is_alive():
                 self.worker.heartbeat()
                 if utcnow() > timeout_at:
@@ -209,14 +209,14 @@ class WorkerProcess:
                     work_horse.send_signal(signal.SIGUSR1)
 
             if not horse_connection.poll():
-                outcome = JobOutcome('aborted', "Workhorse died")
+                outcome = TaskOutcome('aborted', "Workhorse died")
             else:
                 outcome = horse_connection.recv()
         finally:
             if work_horse.is_alive():
                 work_horse.send_signal(signal.SIGKILL)
             if not outcome:
-                outcome = JobOutcome('aborted', "Workhorse died")
+                outcome = TaskOutcome('aborted', "Workhorse died")
         return outcome
 
     def install_signal_handlers(self):
@@ -309,7 +309,7 @@ class Worker:
         self.description = description
         self.state = None
         self.queues = queues
-        self.current_job_id = None
+        self.current_task_id = None
         self.started_at = None
         self.shutdown_at = None
         self.shutdown_requested_at = None
@@ -324,13 +324,13 @@ class Worker:
             self.queues = [Queue(q) for q in obj['queues'].split(',')]
         else:
             self.queues = []
-        self.current_job_id = obj['current_job_id']
+        self.current_task_id = obj['current_task_id']
         for k in ['started_at', 'shutdown_at', 'shutdown_requested_at']:
             setattr(self, k, utcparse(obj[k]) if obj.get(k) else None)
 
     @takes_pipeline
     def _save(self, fields=None, *, pipeline):
-        string_fields = ['description', 'state', 'queues', 'current_job_id']
+        string_fields = ['description', 'state', 'queues', 'current_task_id']
         date_fields = ['started_at', 'shutdown_at', 'shutdown_requested_at']
         if fields is None:
             fields = string_fields + date_fields
@@ -374,18 +374,18 @@ class Worker:
         self._save(pipeline=pipeline)
 
     @takes_pipeline
-    def start_job(self, job, *, pipeline):
+    def start_task(self, task, *, pipeline):
         assert self.state == WorkerState.IDLE
         self.state = WorkerState.BUSY
-        self.current_job_id = job.id
-        self._save(['state', 'current_job_id'], pipeline=pipeline)
+        self.current_task_id = task.id
+        self._save(['state', 'current_task_id'], pipeline=pipeline)
 
     @takes_pipeline
-    def end_job(self, job, *, pipeline):
+    def end_task(self, task, *, pipeline):
         assert self.state == WorkerState.BUSY
         self.state = WorkerState.IDLE
-        self.current_job_id = None
-        self._save(['state', 'current_job_id'], pipeline=pipeline)
+        self.current_task_id = None
+        self._save(['state', 'current_task_id'], pipeline=pipeline)
 
     @takes_pipeline
     def shutdown(self, *, pipeline):
@@ -401,11 +401,11 @@ class Worker:
         worker_registry.remove(self, pipeline=pipeline)
         self.state = WorkerState.DEAD
         self.shutdown_at = utcnow()
-        if self.current_job_id:
-            job = Job.fetch(self.current_job_id)
-            job.handle_worker_death(pipeline=pipeline)
-            self.current_job_id = None
-        self._save(['state', 'current_job_id', 'shutdown_at'], pipeline=pipeline)
+        if self.current_task_id:
+            task = Task.fetch(self.current_task_id)
+            task.handle_worker_death(pipeline=pipeline)
+            self.current_task_id = None
+        self._save(['state', 'current_task_id', 'shutdown_at'], pipeline=pipeline)
         pipeline.expire(self.key, DEAD_WORKER_TTL)
 
     def set_shutdown_requested(self):
@@ -413,7 +413,7 @@ class Worker:
         self.connection.hset(self.key, 'shutdown_requested_at',
                              utcformat(self.shutdown_requested_at))
 
-    def fetch_current_job(self):
-        """Returns the job id of the currently executing job."""
-        if self.current_job_id:
-            return Job.fetch(self.current_job_id)
+    def fetch_current_task(self):
+        """Returns the task id of the currently executing task."""
+        if self.current_task_id:
+            return Task.fetch(self.current_task_id)

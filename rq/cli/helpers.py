@@ -102,7 +102,7 @@ def show_queues(queues, raw, by_queue, queue_class, worker_class):
     else:
         qs = queue_class.all()
 
-    num_jobs = 0
+    num_tasks = 0
     termwidth, _ = click.get_terminal_size()
     chartwidth = min(20, termwidth - 20)
 
@@ -124,11 +124,11 @@ def show_queues(queues, raw, by_queue, queue_class, worker_class):
             line = 'queue %s %d' % (q.name, count)
         click.echo(line)
 
-        num_jobs += count
+        num_tasks += count
 
     # print summary when not in raw mode
     if not raw:
-        click.echo('%d queues, %d jobs total' % (len(qs), num_jobs))
+        click.echo('%d queues, %d tasks total' % (len(qs), num_tasks))
 
 
 def show_workers(queues, raw, by_queue, queue_class, worker_class):
@@ -217,7 +217,7 @@ def setup_loghandlers_from_args(verbose, quiet):
 class CliConfig(object):
     """A helper class to be used with click commands, to handle shared options"""
     def __init__(self, url=None, config=None, worker_class=DEFAULT_WORKER_CLASS,
-                 job_class=DEFAULT_JOB_CLASS, queue_class=DEFAULT_QUEUE_CLASS,
+                 task_class=DEFAULT_JOB_CLASS, queue_class=DEFAULT_QUEUE_CLASS,
                  connection_class=DEFAULT_CONNECTION_CLASS, *args, **kwargs):
         self._connection = None
         self.url = url
@@ -228,9 +228,9 @@ class CliConfig(object):
         except (ImportError, AttributeError) as exc:
             raise click.BadParameter(str(exc), param_hint='--worker-class')
         try:
-            self.job_class = import_attribute(job_class)
+            self.task_class = import_attribute(task_class)
         except (ImportError, AttributeError) as exc:
-            raise click.BadParameter(str(exc), param_hint='--job-class')
+            raise click.BadParameter(str(exc), param_hint='--task-class')
 
         try:
             self.queue_class = import_attribute(queue_class)

@@ -1,6 +1,6 @@
 from .connections import resolve_connection
-from .exceptions import (DequeueTimeout, NoSuchJobError, DeserializationError)
-from .job import Job, JobStatus
+from .exceptions import (DequeueTimeout, NoSuchTaskError, DeserializationError)
+from .task import Task, TaskStatus
 from .utils import utcnow, parse_timeout, takes_pipeline, decode_list
 
 
@@ -37,17 +37,17 @@ class Queue(object):
     def empty(self):
         """Removes all messages on the queue."""
         script = b"""
-            local prefix = "rq:job:"
+            local prefix = "rq:task:"
             local q = KEYS[1]
             local count = 0
             while true do
-                local job_id = redis.call("lpop", q)
-                if job_id == false then
+                local task_id = redis.call("lpop", q)
+                if task_id == false then
                     break
                 end
 
-                -- Delete the job data
-                redis.call("del", prefix..job_id)
+                -- Delete the task data
+                redis.call("del", prefix..task_id)
                 count = count + 1
             end
             return count
@@ -55,46 +55,46 @@ class Queue(object):
         script = self.connection.register_script(script)
         return script(keys=[self.key])
 
-    def get_job_ids(self):
-        """Return the job IDs in the queue."""
-        return [job_id.decode() for job_id in
+    def get_task_ids(self):
+        """Return the task IDs in the queue."""
+        return [task_id.decode() for task_id in
                 self.connection.lrange(self.key, 0, -1)]
 
-    def get_jobs(self):
-        """Returns the jobs in the queue."""
-        job_ids = self.get_job_ids()
+    def get_tasks(self):
+        """Returns the tasks in the queue."""
+        task_ids = self.get_task_ids()
 
-        def fetch_job(job_id):
+        def fetch_task(task_id):
             try:
-                return Job.fetch(job_id)
-            except NoSuchJobError:
+                return Task.fetch(task_id)
+            except NoSuchTaskError:
                 return None
-        return list(filter(None, map(fetch_job, job_ids)))
+        return list(filter(None, map(fetch_task, task_ids)))
 
     @takes_pipeline
-    def remove(self, job_or_id, *, pipeline):
-        """Removes Job from queue, accepts either a Job instance or ID."""
-        job_id = job_or_id.id if isinstance(job_or_id, Job) else job_or_id
-        pipeline.lrem(self.key, 1, job_id)
+    def remove(self, task_or_id, *, pipeline):
+        """Removes Task from queue, accepts either a Task instance or ID."""
+        task_id = task_or_id.id if isinstance(task_or_id, Task) else task_or_id
+        pipeline.lrem(self.key, 1, task_id)
 
     @takes_pipeline
-    def push_job(self, job, *, pipeline, at_front=False):
-        """Pushes a job id on the queue
+    def push_task(self, task, *, pipeline, at_front=False):
+        """Pushes a task id on the queue
 
-        `at_front` inserts the job at the front instead of the back of the queue"""
+        `at_front` inserts the task at the front instead of the back of the queue"""
         # Add Queue key set
         pipeline.sadd(self.redis_queues_keys, self.key)
         if at_front:
-            pipeline.lpush(self.key, job.id)
+            pipeline.lpush(self.key, task.id)
         else:
-            pipeline.rpush(self.key, job.id)
+            pipeline.rpush(self.key, task.id)
 
     @takes_pipeline
     def enqueue_call(self, *args, pipeline, **kwargs):
-        """Creates a job to represent the delayed function call and enqueues it."""
-        job = Job(*args, **kwargs)
-        job.enqeue(self, pipeline=pipeline)
-        return job
+        """Creates a task to represent the delayed function call and enqueues it."""
+        task = Task(*args, **kwargs)
+        task.enqeue(self, pipeline=pipeline)
+        return task
 
     @classmethod
     def lpop(cls, queue_keys, timeout):
@@ -114,8 +114,8 @@ class Queue(object):
             result = connection.blpop(queue_keys, timeout)
             if result is None:
                 raise DequeueTimeout(timeout, queue_keys)
-            queue_key, job_id = result
-            return queue_key, job_id
+            queue_key, task_id = result
+            return queue_key, task_id
         else:  # non-blocking variant
             for queue_key in queue_keys:
                 blob = connection.lpop(queue_key)
@@ -128,7 +128,7 @@ class Queue(object):
 
     @classmethod
     def dequeue_any(cls, queues, timeout):
-        """Class method returning the Job instance at the front of the given
+        """Class method returning the Task instance at the front of the given
         set of Queues, where the order of the queues is important.
 
         When all of the Queues are empty, depending on the `timeout` argument,
@@ -144,16 +144,16 @@ class Queue(object):
         result = cls.lpop(queue_keys, timeout)
         if result is None:
             return None, None
-        queue_key, job_id = decode_list(result)
+        queue_key, task_id = decode_list(result)
         queue = cls.from_queue_key(queue_key)
         try:
-            job = Job.fetch(job_id)
-        except (NoSuchJobError, DeserializationError) as e:
+            task = Task.fetch(task_id)
+        except (NoSuchTaskError, DeserializationError) as e:
             # Attach queue information to the exception for improved error reporting
-            e.job_id = job_id
+            e.task_id = task_id
             e.queue = queue
             raise e
-        return job, queue
+        return task, queue
 
     def __repr__(self):
         return '{0}({1!r})'.format(self.__class__.__name__, self.name)
