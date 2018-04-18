@@ -12,6 +12,10 @@ class NoSuchTaskError(Exception):
     pass
 
 
+class InvalidOperation(Exception):
+    pass
+
+
 class NoSuchWorkerError(Exception):
     pass
 

@@ -5,7 +5,7 @@ import traceback
 
 from .connections import resolve_connection
 from .defaults import JOB_TIMEOUT
-from .exceptions import NoSuchTaskError, TaskAborted, ShutdownImminentException, WorkerDied
+from .exceptions import NoSuchTaskError, TaskAborted, ShutdownImminentException, WorkerDied, InvalidOperation
 from .queue import Queue
 from .registry import (failed_task_registry, finished_task_registry,
                        running_task_registry)
@@ -220,15 +220,19 @@ class Task:
         outcome = self._generate_outcome(*exc_info)
         self.handle_outcome(outcome, pipeline=pipeline)
 
-    @takes_pipeline
-    def cancel(self, *, pipeline):
-        # TODO: check which state we are in and react accordingly
-        # fail if the task is currently running
-        # Need to do this in a transaction
-        from .queue import Queue
-        q = Queue(name=self.origin)
-        q.remove(self, pipeline=pipeline)
-        self.delete_many([self.id], pipeline=pipeline)
+    def cancel(self):
+        queue = Queue(name=self.origin)
+
+        def transaction(pipeline):
+            status = pipeline.hget(self.key, 'status')
+            if status != TaskStatus.QUEUED:
+                raise InvalidOperation("Only enqueued jobs can be canceled")
+            pipeline.multi()
+            self.status = TaskStatus.CANCELED
+            self.delete_many([self.id], pipeline=pipeline)
+            queue.remove(self, pipeline=pipeline)
+
+        self.connection.transaction(transaction, self.key)
 
     @takes_pipeline
     def _set_status(self, status, *, pipeline):

@@ -107,16 +107,17 @@ class WorkHorse(multiprocessing.Process):
         os.kill(self.pid, sig)
 
 
+def generate_worker_description(*, pid):
+    hostname = socket.gethostname()
+    shortname = hostname.split('.', maxsplit=1)[0]
+    return '{0}.{1}'.format(shortname, pid)
+
+
 class WorkerProcess:
     def __init__(self, queues, burst):
         self.connection = get_current_connection()
 
-        queues = [Queue(name=q) if isinstance(q, str) else q
-                  for q in queues]
-        # TODO: use heroku infos here
-        hostname = socket.gethostname()
-        shortname, _, _ = hostname.partition('.')
-        description = '{0}.{1}'.format(shortname, self.pid)
+        description = generate_worker_description()
 
         id = str(uuid.uuid4())
 
