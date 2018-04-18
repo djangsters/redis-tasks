@@ -1,7 +1,7 @@
 from .connections import resolve_connection
 from .exceptions import NoSuchWorkerError
 from .task import Task
-from .utils import current_timestamp, takes_pipeline, decode_list
+from .utils import current_timestamp, atomic_pipeline, decode_list
 from .defaults import REGISTRIES_TTL, WORKER_HEARTBEAT_TIMEOUT
 
 
@@ -13,14 +13,14 @@ class ExpiringRegistry:
         self.key = self.key_template.format(name)
         self.connection = resolve_connection()
 
-    @takes_pipeline
+    @atomic_pipeline
     def add(self, task, *, pipeline):
         pipeline.zadd(self.key, current_timestamp(), task.id)
 
     def get_task_ids(self):
         return decode_list(self.connection.zrange(self.key, 0, -1))
 
-    @takes_pipeline
+    @atomic_pipeline
     def expire(self, *, pipeline):
         """Remove expired tasks from registry."""
         cutoff_time = current_timestamp() - REGISTRIES_TTL
@@ -44,11 +44,11 @@ class RunningTaskRegistry:
         self.key = self.key_template.format('running')
         self.connection = resolve_connection()
 
-    @takes_pipeline
+    @atomic_pipeline
     def add(self, task, worker, *, pipeline):
         pipeline.hset(self.key, task.id, worker.id)
 
-    @takes_pipeline
+    @atomic_pipeline
     def remove(self, task, *, pipeline):
         pipeline.hdel(self.key, task.id)
 
@@ -68,7 +68,7 @@ class WorkerRegistry:
     def __init__(self, name='default'):
         self.connection = resolve_connection()
 
-    @takes_pipeline
+    @atomic_pipeline
     def add(self, worker, *, pipeline):
         pipeline.zadd(self.key, worker.id, current_timestamp())
 
@@ -78,7 +78,7 @@ class WorkerRegistry:
             raise NoSuchWorkerError()
         self.connection.zadd(self.key, worker.id)
 
-    @takes_pipeline
+    @atomic_pipeline
     def remove(self, worker, *, pipeline):
         pipeline.zrem(self.key, worker.id)
 

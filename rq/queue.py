@@ -1,7 +1,7 @@
 from .connections import resolve_connection
 from .exceptions import (DequeueTimeout, NoSuchTaskError, DeserializationError)
 from .task import Task, TaskStatus
-from .utils import utcnow, parse_timeout, takes_pipeline, decode_list
+from .utils import utcnow, parse_timeout, atomic_pipeline, decode_list
 
 
 class Queue(object):
@@ -71,13 +71,13 @@ class Queue(object):
                 return None
         return list(filter(None, map(fetch_task, task_ids)))
 
-    @takes_pipeline
+    @atomic_pipeline
     def remove(self, task_or_id, *, pipeline):
         """Removes Task from queue, accepts either a Task instance or ID."""
         task_id = task_or_id.id if isinstance(task_or_id, Task) else task_or_id
         pipeline.lrem(self.key, 1, task_id)
 
-    @takes_pipeline
+    @atomic_pipeline
     def push_task(self, task, *, pipeline, at_front=False):
         """Pushes a task id on the queue
 
@@ -89,7 +89,7 @@ class Queue(object):
         else:
             pipeline.rpush(self.key, task.id)
 
-    @takes_pipeline
+    @atomic_pipeline
     def enqueue_call(self, *args, pipeline, **kwargs):
         """Creates a task to represent the delayed function call and enqueues it."""
         task = Task(*args, **kwargs)

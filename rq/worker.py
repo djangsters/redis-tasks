@@ -18,7 +18,7 @@ from .exceptions import (DequeueTimeout, TaskAborted, NoSuchWorkerError,
 from .task import Task, TaskOutcome
 from .queue import Queue
 from .registry import expire_registries, worker_registry
-from .utils import enum, takes_pipeline, utcformat, utcnow, utcparse
+from .utils import enum, atomic_pipeline, utcformat, utcnow, utcparse
 from .version import VERSION
 
 logger = logging.getLogger(__name__)
@@ -329,7 +329,7 @@ class Worker:
         for k in ['started_at', 'shutdown_at', 'shutdown_requested_at']:
             setattr(self, k, utcparse(obj[k]) if obj.get(k) else None)
 
-    @takes_pipeline
+    @atomic_pipeline
     def _save(self, fields=None, *, pipeline):
         string_fields = ['description', 'state', 'queues', 'current_task_id']
         date_fields = ['started_at', 'shutdown_at', 'shutdown_requested_at']
@@ -364,7 +364,7 @@ class Worker:
         Raises a NoSuchworkerError if the registry considers this worker as dead"""
         worker_registry.heartbeat(self)
 
-    @takes_pipeline
+    @atomic_pipeline
     def startup(self, *, pipeline):
         self.log.debug(f'Registering birth of worker {self.description} ({self.id})')
         if self.connection.exists(self.key):
@@ -374,21 +374,21 @@ class Worker:
         worker_registry.add(self, pipeline=pipeline)
         self._save(pipeline=pipeline)
 
-    @takes_pipeline
+    @atomic_pipeline
     def start_task(self, task, *, pipeline):
         assert self.state == WorkerState.IDLE
         self.state = WorkerState.BUSY
         self.current_task_id = task.id
         self._save(['state', 'current_task_id'], pipeline=pipeline)
 
-    @takes_pipeline
+    @atomic_pipeline
     def end_task(self, task, *, pipeline):
         assert self.state == WorkerState.BUSY
         self.state = WorkerState.IDLE
         self.current_task_id = None
         self._save(['state', 'current_task_id'], pipeline=pipeline)
 
-    @takes_pipeline
+    @atomic_pipeline
     def shutdown(self, *, pipeline):
         assert self.state == WorkerState.IDLE
         worker_registry.remove(self, pipeline=pipeline)
@@ -397,7 +397,7 @@ class Worker:
         self._save(['state', 'shutdown_at'], pipeline=pipeline)
         pipeline.expire(self.key, DEAD_WORKER_TTL)
 
-    @takes_pipeline
+    @atomic_pipeline
     def died(self, *, pipeline):
         worker_registry.remove(self, pipeline=pipeline)
         self.state = WorkerState.DEAD

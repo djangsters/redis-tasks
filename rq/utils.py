@@ -58,7 +58,8 @@ def deserialize(bytes_obj):
         raise DeserializationError('Could not unpickle', bytes_obj) from e
     return obj
 
-def takes_pipeline(f):
+
+def atomic_pipeline(f):
     @wraps(f)
     def wrapper(*args, pipeline=None, **kwargs):
         pipe = pipeline

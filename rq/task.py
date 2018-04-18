@@ -10,7 +10,7 @@ from .queue import Queue
 from .registry import (failed_task_registry, finished_task_registry,
                        running_task_registry)
 from .serialization import deserialize, serialize
-from .utils import (enum, import_attribute, takes_pipeline, utcformat, utcnow,
+from .utils import (enum, import_attribute, atomic_pipeline, utcformat, utcnow,
                     utcparse)
 
 TaskStatus = enum(
@@ -152,7 +152,7 @@ class Task:
     def fetch(cls, id):
         return cls(fetch_id=id)
 
-    @takes_pipeline
+    @atomic_pipeline
     def enqueue(self, queue, *, pipeline):
         assert self.status is None
         self.status = TaskStatus.QUEUED
@@ -161,7 +161,7 @@ class Task:
         self._save(pipeline=pipeline)
         queue.push_task(self, pipeline=pipeline)
 
-    @takes_pipeline
+    @atomic_pipeline
     def requeue(self, *, pipeline):
         assert self.status is TaskStatus.RUNNING
         running_task_registry.remove(self, pipeline=pipeline)
@@ -171,7 +171,7 @@ class Task:
         self.started_at = None
         self._save(['status', 'aborted_runs', 'started_at'], pipeline=pipeline)
 
-    @takes_pipeline
+    @atomic_pipeline
     def set_running(self, worker, *, pipeline):
         assert self.status == TaskStatus.QUEUED
         running_task_registry.add(self, worker, pipeline=pipeline)
@@ -179,7 +179,7 @@ class Task:
         self.started_at = utcnow()
         self._save(['status', 'started_at'], pipeline=pipeline)
 
-    @takes_pipeline
+    @atomic_pipeline
     def set_finished(self, *, pipeline):
         assert self.status == TaskStatus.RUNNING
         running_task_registry.remove(self, pipeline=pipeline)
@@ -188,7 +188,7 @@ class Task:
         self.ended_at = utcnow()
         self._save(['status', 'ended_at'], pipeline=pipeline)
 
-    @takes_pipeline
+    @atomic_pipeline
     def set_failed(self, error_message, *, pipeline):
         assert self.status == TaskStatus.RUNNING
         running_task_registry.remove(self, pipeline=pipeline)
@@ -198,7 +198,7 @@ class Task:
         self.ended_at = utcnow()
         self._save(['status', 'error_message', 'ended_at'], pipeline=pipeline)
 
-    @takes_pipeline
+    @atomic_pipeline
     def handle_outcome(self, outcome, *, pipeline):
         if outcome.outcome == 'success':
             self.set_finished(pipeline=pipeline)
@@ -210,7 +210,7 @@ class Task:
             else:
                 self.set_failed(outcome.message, pipeline=pipeline)
 
-    @takes_pipeline
+    @atomic_pipeline
     def handle_worker_death(self, *, pipeline):
         assert self.status == TaskStatus.RUNNING
         try:
@@ -234,7 +234,7 @@ class Task:
 
         self.connection.transaction(transaction, self.key)
 
-    @takes_pipeline
+    @atomic_pipeline
     def _set_status(self, status, *, pipeline):
         self.status = status
         pipeline.hset(self.key, 'status', self.status)
@@ -266,7 +266,7 @@ class Task:
         return 'rq:task:' + task_id
 
     @classmethod
-    @takes_pipeline
+    @atomic_pipeline
     def delete_many(cls, task_ids, *, pipeline):
         pipeline.delete(*(cls.key_for(task_id) for task_id in task_ids))
 
@@ -296,7 +296,7 @@ class Task:
         self.meta = deserialize(obj['meta']) if obj.get('meta') else {}
         self.aborted_runs = deserialize(obj['aborted_runs']) if obj.get('aborted_runs') else []
 
-    @takes_pipeline
+    @atomic_pipeline
     def _save(self, fields=None, *, pipeline=None):
         string_fields = ['func_name', 'status', 'description', 'origin', 'error_message']
         date_fields = ['enqueue_at', 'started_at', 'ended_at']
