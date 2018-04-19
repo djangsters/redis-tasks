@@ -22,50 +22,6 @@ class TestRegistry(RQTestCase):
         super(TestRegistry, self).setUp()
         self.registry = StartedTaskRegistry(connection=self.testconn)
 
-    def test_key(self):
-        self.assertEqual(self.registry.key, 'rq:wip:default')
-
-    def test_custom_task_class(self):
-        registry = StartedTaskRegistry(task_class=CustomTask)
-        self.assertFalse(registry.task_class == self.registry.task_class)
-
-    def test_add_and_remove(self):
-        """Adding and removing task to StartedTaskRegistry."""
-        timestamp = current_timestamp()
-        task = Task()
-
-        # Test that task is added with the right score
-        self.registry.add(task, 1000)
-        self.assertLess(self.testconn.zscore(self.registry.key, task.id),
-                        timestamp + 1002)
-
-        # Ensure that a timeout of -1 results in a score of -1
-        self.registry.add(task, -1)
-        self.assertEqual(self.testconn.zscore(self.registry.key, task.id), -1)
-
-        # Ensure that task is properly removed from sorted set
-        self.registry.remove(task)
-        self.assertIsNone(self.testconn.zscore(self.registry.key, task.id))
-
-    def test_get_task_ids(self):
-        """Getting task ids from StartedTaskRegistry."""
-        timestamp = current_timestamp()
-        self.testconn.zadd(self.registry.key, timestamp + 10, 'foo')
-        self.testconn.zadd(self.registry.key, timestamp + 20, 'bar')
-        self.assertEqual(self.registry.get_task_ids(), ['foo', 'bar'])
-
-    def test_get_expired_task_ids(self):
-        """Getting expired task ids form StartedTaskRegistry."""
-        timestamp = current_timestamp()
-
-        self.testconn.zadd(self.registry.key, 1, 'foo')
-        self.testconn.zadd(self.registry.key, timestamp + 10, 'bar')
-        self.testconn.zadd(self.registry.key, timestamp + 30, 'baz')
-
-        self.assertEqual(self.registry.get_expired_task_ids(), ['foo'])
-        self.assertEqual(self.registry.get_expired_task_ids(timestamp + 20),
-                         ['foo', 'bar'])
-
     def test_cleanup(self):
         """Moving expired tasks to FailedQueue."""
         failed_queue = FailedQueue(connection=self.testconn)
@@ -134,21 +90,6 @@ class TestRegistry(RQTestCase):
         self.testconn.zadd(self.registry.key, timestamp, 'bar')
         self.assertEqual(self.registry.count, 2)
         self.assertEqual(len(self.registry), 2)
-
-    def test_clean_registries(self):
-        """clean_registries() cleans Started and Finished task registries."""
-
-        queue = Queue(connection=self.testconn)
-
-        finished_task_registry = FinishedTaskRegistry(connection=self.testconn)
-        self.testconn.zadd(finished_task_registry.key, 1, 'foo')
-
-        started_task_registry = StartedTaskRegistry(connection=self.testconn)
-        self.testconn.zadd(started_task_registry.key, 1, 'foo')
-
-        clean_registries(queue)
-        self.assertEqual(self.testconn.zcard(finished_task_registry.key), 0)
-        self.assertEqual(self.testconn.zcard(started_task_registry.key), 0)
 
 
 class TestFinishedTaskRegistry(RQTestCase):

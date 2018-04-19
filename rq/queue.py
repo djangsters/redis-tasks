@@ -6,8 +6,6 @@ from .registries import queue_registry
 
 
 class Queue(object):
-    redis_queues_keys = 'rq:queues'
-
     def __init__(self, name='default'):
         self.name = name
 

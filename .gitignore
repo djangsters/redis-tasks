@@ -1,4 +1,5 @@
 *.pyc
+__pycache__
 *.egg-info
 
 /dump.rdb
@@ -12,4 +13,5 @@
 Vagrantfile
 .idea/
 .coverage*
-/.cache
+.cache
+.pytest_cache

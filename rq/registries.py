@@ -16,7 +16,7 @@ class RunningTaskRegistry:
     def remove(self, task, *, pipeline):
         pipeline.hdel(self.key, task.id)
 
-    def count(self, task):
+    def count(self):
         return connection.hlen(self.key)
 
     def __some_getall(self, task):
@@ -37,14 +37,14 @@ class ExpiringRegistry:
     def get_task_ids(self):
         return decode_list(connection.zrange(self.key, 0, -1))
 
-    @atomic_pipeline
-    def expire(self, *, pipeline):
+    def expire(self):
         """Remove expired tasks from registry."""
         cutoff_time = current_timestamp() - settings.EXPIRING_REGISTRIES_TTL
         expired_task_ids = decode_list(connection.zrangebyscore(
             self.key, 0, cutoff_time))
-        rq.Task.delete_many(expired_task_ids, pipeline=pipeline)
-        connection.zremrangebyscore(self.key, 0, cutoff_time)
+        if expired_task_ids:
+            connection.zremrangebyscore(self.key, 0, cutoff_time)
+            rq.Task.delete_many(expired_task_ids)
 
 
 finished_task_registry = ExpiringRegistry('finished')
@@ -62,25 +62,25 @@ class WorkerRegistry:
 
     @atomic_pipeline
     def add(self, worker, *, pipeline):
-        pipeline.zadd(self.key, worker.id, current_timestamp())
+        pipeline.zadd(self.key, current_timestamp(), worker.id)
 
     def heartbeat(self, worker):
         score = connection.zscore(self.key, worker.id)
-        if not score or score <= self._get_oldest_valid():
+        if not score or score <= self._get_oldest_valid_heartbeat():
             raise NoSuchWorkerError()
-        connection.zadd(self.key, worker.id)
+        connection.zadd(self.key, current_timestamp(), worker.id)
 
     @atomic_pipeline
     def remove(self, worker, *, pipeline):
         pipeline.zrem(self.key, worker.id)
 
     def get_alive_ids(self):
-        oldest_valid = self._get_oldest_valid()
+        oldest_valid = self._get_oldest_valid_heartbeat()
         return decode_list(connection.zrangebyscore(
             self.key, oldest_valid, '+inf'))
 
     def get_dead_ids(self):
-        oldest_valid = self._get_oldest_valid()
+        oldest_valid = self._get_oldest_valid_heartbeat()
         return decode_list(connection.zrangebyscore(
             self.key, '-inf', oldest_valid))
 
@@ -96,7 +96,8 @@ class QueueRegistry:
         self.key = RedisKey('queues')
 
     def get_names(self):
-        return list(sorted(connection.smembers(self.key)))
+        return list(sorted(decode_list(
+            connection.smembers(self.key))))
 
     @atomic_pipeline
     def add(self, queue, *, pipeline):

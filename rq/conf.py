@@ -51,7 +51,7 @@ settings = Settings()
 
 
 @LazyObject
-def connection(self):
+def connection():
     return redis.StrictRedis.from_url(settings.REDIS_URL)
 
 
@@ -61,3 +61,8 @@ class RedisKey:
 
     def __str__(self):
         return settings.REDIS_PREFIX + ':' + self.name
+
+    def __eq__(self, other):
+        if not isinstance(other, self.__class__):
+            return NotImplemented
+        return self.name == other.name

@@ -31,19 +31,16 @@ def test_atomic_pipeline(mocker):
     utils.atomic_pipeline(f1)(pipeline=mock_pipe)
 
     def f2(pipeline):
-        assert pipeline == connection.pipeline()
+        assert pipeline == real_pipe
 
+    real_pipe = connection.pipeline().__enter__()
     utils.atomic_pipeline(f2)()
-    pipe = connection.pipeline()
-    pipe.execute.assert_called_once()
-    pipe.reset.assert_called_once()
+    real_pipe.execute.assert_called_once()
 
     def f3(pipeline):
         raise ZeroDivisionError()
 
-    pipe.execute.reset_mock()
-    pipe.reset.reset_mock()
+    real_pipe.execute.reset_mock()
     with pytest.raises(ZeroDivisionError):
         utils.atomic_pipeline(f3)()
-    pipe.execute.assert_not_called()
-    pipe.reset.assert_called_once()
+    real_pipe.execute.assert_not_called()
