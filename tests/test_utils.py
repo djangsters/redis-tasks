@@ -1,17 +1,49 @@
-# -*- coding: utf-8 -*-
-from __future__ import (absolute_import, division, print_function,
-                        unicode_literals)
+import pytest
 
-from tests import RQTestCase
-from rq.utils import parse_timeout
+from rq import utils
+from rq import exceptions
 
 
-class TestUtils(RQTestCase):
-    def test_parse_timeout(self):
-        """Ensure function parse_timeout works correctly"""
-        self.assertEqual(12, parse_timeout(12))
-        self.assertEqual(12, parse_timeout('12'))
-        self.assertEqual(12, parse_timeout('12s'))
-        self.assertEqual(720, parse_timeout('12m'))
-        self.assertEqual(3600, parse_timeout('1h'))
-        self.assertEqual(3600, parse_timeout('1H'))
+def test_import_attribute():
+    assert utils.import_attribute("tests.app.import_me.test_attrib") == "foo"
+
+
+def test_utc():
+    now = utils.utcnow()
+    assert utils.utcparse(utils.utcformat(now)) == now.replace(microsecond=0)
+
+
+def test_serialization():
+    my_obj = {'a': 'b', 'c': 54.325, 'd': utils.utcnow()}
+    assert utils.deserialize(utils.serialize(my_obj)) == my_obj
+
+    with pytest.raises(exceptions.DeserializationError):
+        utils.deserialize(b"invalid")
+
+
+def test_atomic_pipeline(mocker):
+    connection = mocker.patch('rq.conf.connection')
+
+    def f1(pipeline):
+        assert pipeline == mock_pipe
+
+    mock_pipe = mocker.sentinel.pipe
+    utils.atomic_pipeline(f1)(pipeline=mock_pipe)
+
+    def f2(pipeline):
+        assert pipeline == connection.pipeline()
+
+    utils.atomic_pipeline(f2)()
+    pipe = connection.pipeline()
+    pipe.execute.assert_called_once()
+    pipe.reset.assert_called_once()
+
+    def f3(pipeline):
+        raise ZeroDivisionError()
+
+    pipe.execute.reset_mock()
+    pipe.reset.reset_mock()
+    with pytest.raises(ZeroDivisionError):
+        utils.atomic_pipeline(f3)()
+    pipe.execute.assert_not_called()
+    pipe.reset.assert_called_once()

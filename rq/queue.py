@@ -69,12 +69,6 @@ class Queue(object):
         return list(filter(None, map(fetch_task, task_ids)))
 
     @atomic_pipeline
-    def remove(self, task_or_id, *, pipeline):
-        """Removes Task from queue, accepts either a Task instance or ID."""
-        task_id = task_or_id.id if isinstance(task_or_id, Task) else task_or_id
-        pipeline.lrem(self.key, 1, task_id)
-
-    @atomic_pipeline
     def push_task(self, task, *, pipeline, at_front=False):
         """Pushes a task id on the queue
 
@@ -123,7 +117,7 @@ class Queue(object):
 
     @classmethod
     def dequeue_any(cls, queues, timeout):
-        """Class method returning the Task instance at the front of the given
+        """Class method returning the task instance at the front of the given
         set of Queues, where the order of the queues is important.
 
         When all of the Queues are empty, depending on the `timeout` argument,

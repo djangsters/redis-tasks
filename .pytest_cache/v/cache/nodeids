@@ -1,0 +1,9 @@
+[
+  "tests/test_conf.py::test_settings",
+  "tests/test_conf.py::test_mock_settings",
+  "tests/test_conf.py::test_RedisKey",
+  "tests/test_utils.py::test_import_attribute",
+  "tests/test_utils.py::test_utc",
+  "tests/test_utils.py::test_serialization",
+  "tests/test_utils.py::test_atomic_pipeline"
+]

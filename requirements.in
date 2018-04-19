@@ -1,0 +1,4 @@
+redis
+click
+pytest
+pytest-mock

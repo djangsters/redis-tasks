@@ -5,12 +5,10 @@ import operator
 import pickle
 from functools import wraps
 
-from .conf import connection
 from .exceptions import DeserializationError
 
 
 def import_attribute(name):
-    """Return an attribute from a dotted path name (e.g. "path.to.func")."""
     module_name, attribute = name.rsplit('.', 1)
     module = importlib.import_module(module_name)
     return getattr(module, attribute)
@@ -43,7 +41,7 @@ def decode_list(lst):
 
 
 def serialize(obj):
-    pickle.dumps(obj, protocol=pickle.HIGHEST_PROTOCOL)
+    return pickle.dumps(obj, protocol=pickle.HIGHEST_PROTOCOL)
 
 
 def deserialize(bytes_obj):
@@ -61,6 +59,8 @@ def deserialize(bytes_obj):
 
 
 def atomic_pipeline(f):
+    from .conf import connection
+
     @wraps(f)
     def wrapper(*args, pipeline=None, **kwargs):
         pipe = pipeline
@@ -75,30 +75,28 @@ def atomic_pipeline(f):
             if not pipeline:
                 pipe.reset()
 
+    return wrapper
+
 
 empty = object()
-osetattr = object.__setattr__
-ogetattr = object.__getattr__
 
 
 def new_method_proxy(func):
     def inner(self, *args, **kwargs):
-        wrapped = ogetattr(self, '_wrapped')
-        if wrapped is empty:
-            ogetattr(self, '_setup')()
-            wrapped = ogetattr(self, '_wrapped')
-        return func(ogetattr(self, '_wrapped'), *args, **kwargs)
+        if self._wrapped is empty:
+            self._setup()
+        return func(self._wrapped, *args, **kwargs)
     return inner
 
 
 class LazyObject:
     def __init__(self, func):
-        osetattr(self, '_wrapped', empty)
-        osetattr(self, '_setupfunc', func)
+        self.__dict__['_wrapped'] = empty
+        self.__dict__['_setupfunc'] = func
 
     def _setup(self):
-        value = ogetattr(self, '_setupfunc')()
-        osetattr(self, '_wrapped', value)
+        self.wrapped = self._setupfunc()
+        del self._setupfunc
 
     __getattr__ = new_method_proxy(getattr)
     __setattr__ = new_method_proxy(setattr)
@@ -118,8 +116,8 @@ class LazyObject:
     __contains__ = new_method_proxy(operator.contains)
 
     def __repr__(self):
-        if ogetattr(self, '_wrapped') is empty:
-            repr_attr = ogetattr(self, '_setupfunc')
+        if self._wrapped is empty:
+            repr_attr = self._setupfunc
         else:
-            repr_attr = ogetattr(self, '_wrapped')
+            repr_attr = self._wrapped
         return f'<{type(self).__name__}: {repr_attr!r}>'

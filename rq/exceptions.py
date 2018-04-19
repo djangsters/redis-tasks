@@ -30,5 +30,5 @@ class DequeueTimeout(Exception):
     pass
 
 
-class ShutdownImminentException(BaseException):
+class WorkerShutdown(BaseException):
     pass

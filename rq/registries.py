@@ -1,5 +1,5 @@
+import rq
 from .exceptions import NoSuchWorkerError
-from .task import Task
 from .utils import current_timestamp, atomic_pipeline, decode_list
 from .conf import connection, settings, RedisKey
 
@@ -43,7 +43,7 @@ class ExpiringRegistry:
         cutoff_time = current_timestamp() - settings.EXPIRING_REGISTRIES_TTL
         expired_task_ids = decode_list(connection.zrangebyscore(
             self.key, 0, cutoff_time))
-        Task.delete_many(expired_task_ids, pipeline=pipeline)
+        rq.Task.delete_many(expired_task_ids, pipeline=pipeline)
         connection.zremrangebyscore(self.key, 0, cutoff_time)
 
 

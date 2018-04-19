@@ -3,14 +3,13 @@ import uuid
 import sys
 import traceback
 
+import rq
 from .conf import connection, settings, RedisKey
-from .exceptions import NoSuchTaskError, TaskAborted, ShutdownImminentException, WorkerDied, InvalidOperation
-from .queue import Queue
-from .registry import (failed_task_registry, finished_task_registry,
-                       running_task_registry)
-from .serialization import deserialize, serialize
+from .exceptions import NoSuchTaskError, TaskAborted, WorkerShutdown, WorkerDied, InvalidOperation
+from .registries import (failed_task_registry, finished_task_registry,
+                         running_task_registry)
 from .utils import (enum, import_attribute, atomic_pipeline, utcformat, utcnow,
-                    utcparse, LazyObject)
+                    utcparse, LazyObject, deserialize, serialize)
 
 TaskStatus = enum(
     'TaskStatus',
@@ -168,7 +167,7 @@ class Task:
     def requeue(self, *, pipeline):
         assert self.status is TaskStatus.RUNNING
         running_task_registry.remove(self, pipeline=pipeline)
-        Queue(self.origin).push_task(self, at_front=True, pipeline=pipeline)
+        rq.Queue(self.origin).push_task(self, at_front=True, pipeline=pipeline)
         self.status = TaskStatus.QUEUED
         self.aborted_runs.append((self.started_at, utcnow()))
         self.started_at = None
@@ -224,7 +223,7 @@ class Task:
         self.handle_outcome(outcome, pipeline=pipeline)
 
     def cancel(self):
-        queue = Queue(name=self.origin)
+        queue = rq.Queue(name=self.origin)
 
         def transaction(pipeline):
             status = pipeline.hget(self.key, 'status')
@@ -341,7 +340,7 @@ class Task:
                 self.func(*self.args, **self.kwargs)
                 if post_run:
                     post_run()
-            except ShutdownImminentException as e:
+            except WorkerShutdown as e:
                 raise TaskAborted("Worker shutdown") from e
         except Exception:
             exc_info = sys.exc_info()

@@ -10,9 +10,9 @@ from contextlib import contextmanager, suppress
 from datetime import timedelta
 
 from .conf import connection, settings, RedisKey
-from .exceptions import (DequeueTimeout, NoSuchWorkerError, ShutdownImminentException)
+from .exceptions import (DequeueTimeout, NoSuchWorkerError, WorkerShutdown)
 from .queue import Queue
-from .registry import expire_registries, worker_registry
+from .registries import expire_registries, worker_registry
 from .task import Task, TaskOutcome, initialize_middlewares
 from .utils import atomic_pipeline, enum, utcformat, utcnow, utcparse, import_attribute
 
@@ -21,25 +21,6 @@ logger = logging.getLogger(__name__)
 
 class ShutdownRequested(BaseException):
     pass
-
-
-EX_WORKER_SHUTDOWN = 143
-
-
-def signal_name(signum):
-    _signames = dict((getattr(signal, signame), signame)
-                     for signame in dir(signal)
-                     if signame.startswith('SIG') and '_' not in signame)
-    try:
-        if sys.version_info[:2] >= (3, 5):
-            return signal.Signals(signum).name
-        else:
-            return _signames[signum]
-
-    except KeyError:
-        return 'SIG_UNKNOWN'
-    except ValueError:
-        return 'SIG_UNKNOWN'
 
 
 class PostponeShutdown:
@@ -61,17 +42,17 @@ class PostponeShutdown:
         self._active.remove(self)
 
         if not self._active and self._shutdown_delayed:
-            logger.warning('Critical section left, raising ShutdownImminentException')
-            raise ShutdownImminentException()
+            logger.warning('Critical section left, raising WorkerShutdown')
+            raise WorkerShutdown()
 
     @classmethod
     def trigger_shutdown(cls):
         if cls._active:
-            logger.warning('Delaying ShutdownImminentException till critical section is finished')
+            logger.warning('Delaying WorkerShutdown till critical section is finished')
             cls._shutdown_delayed = True
         else:
-            logger.warning('Raising ShutdownImminentException to cancel task')
-            raise ShutdownImminentException()
+            logger.warning('Raising WorkerShutdown to cancel task')
+            raise WorkerShutdown()
 
 
 WorkerStatus = enum(
@@ -226,7 +207,7 @@ class WorkerProcess:
         signal.signal(signal.SIGTERM, self.handle_stop_signal)
 
     def handle_stop_signal(self, signum, frame):
-        self.log.debug('Got signal {0}'.format(signal_name(signum)))
+        self.log.debug('Got signal {0}'.format(signum))
         if self.shutdown_requested:
             return
         self.shutdown_requested = True

@@ -1,0 +1,10 @@
+{
+  "tests_old/test_cli.py": true,
+  "tests_old/test_decorator.py": true,
+  "tests_old/test_job.py": true,
+  "tests_old/test_queue.py": true,
+  "tests_old/test_registry.py": true,
+  "tests_old/test_sentry.py": true,
+  "tests_old/test_utils.py": true,
+  "tests_old/test_worker.py": true
+}

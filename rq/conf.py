@@ -37,14 +37,14 @@ class Settings:
         self._initialized = True
 
     def __getattr__(self, name):
-        if not self.__initialized:
-            self._setup(setting_name=name)
-        return getattr(self._wrapped, name)
+        if not self._initialized:
+            self._configure_from_env(setting_name=name)
+        return self.__dict__[name]
 
     def configure(self, settings):
-        if self._initizalized:
+        if self._initialized:
             raise RuntimeError('Settings already configured.')
-        self._setup(self, settings)
+        self._setup(settings)
 
 
 settings = Settings()
