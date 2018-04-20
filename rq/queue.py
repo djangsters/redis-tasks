@@ -1,4 +1,4 @@
-from .exceptions import (DequeueTimeout, NoSuchTaskError, DeserializationError)
+from .exceptions import (NoSuchTaskError, DeserializationError)
 from .task import Task
 from .utils import utcnow, atomic_pipeline, decode_list
 from .conf import connection, RedisKey
@@ -68,14 +68,14 @@ class Queue(object):
 
     @atomic_pipeline
     def push_task(self, task, *, pipeline, at_front=False):
-        """Pushes a task id on the queue
+        """Pushes a task on the queue
 
         `at_front` inserts the task at the front instead of the back of the queue"""
         queue_registry.add(self)
         if at_front:
-            pipeline.lpush(self.key, task.id)
-        else:
             pipeline.rpush(self.key, task.id)
+        else:
+            pipeline.lpush(self.key, task.id)
 
     @atomic_pipeline
     def enqueue_call(self, *args, pipeline, **kwargs):
@@ -85,61 +85,24 @@ class Queue(object):
         return task
 
     @classmethod
-    def lpop(cls, queue_keys, timeout):
-        """Helper method.  Intermediate method to abstract away from some
-        Redis API details, where LPOP accepts only a single key, whereas BLPOP
-        accepts multiple.  So if we want the non-blocking LPOP, we need to
-        iterate over all queues, do individual LPOPs, and return the result.
+    def dequeue_mutli(cls, queues, timeout):
+        """Returns the task at the front of the given queues.
 
-        The timeout parameter is interpreted as follows:
-            None - non-blocking (return immediately)
-             > 0 - maximum number of seconds to block
-        """
-        if timeout is not None:  # blocking variant
-            if timeout == 0:
-                raise ValueError('RQ does not support indefinite timeouts. Please pick a timeout value > 0')
-            result = connection.blpop(queue_keys, timeout)
-            if result is None:
-                raise DequeueTimeout(timeout, queue_keys)
-            queue_key, task_id = result
-            return queue_key, task_id
-        else:  # non-blocking variant
-            for queue_key in queue_keys:
-                blob = connection.lpop(queue_key)
-                if blob is not None:
-                    return queue_key, blob
-            return None
+        If multiple queues hold tasks, the queue appearing earlier in the list
+        is used. If `timeout` is None, this function returns immedialtey,
+        otherwise it blocks for `timeout` seconds.
 
-    def dequeue(self, timeout):
-        return self.dequeue_any(self, timeout)
-
-    @classmethod
-    def dequeue_any(cls, queues, timeout):
-        """Class method returning the task instance at the front of the given
-        set of Queues, where the order of the queues is important.
-
-        When all of the Queues are empty, depending on the `timeout` argument,
-        either blocks execution of this function for the duration of the
-        timeout or until new messages arrive on any of the queues, or returns
-        None.
-
-        The timeout parameter is interpreted as follows:
-            None - non-blocking (return immediately)
-             > 0 - maximum number of seconds to block
-        """
+        Retuns (queue, task) if a task was dequeued and (None, None) otherwise."""
         queue_map = {q.key: q for q in queues}
-        result = cls.lpop(queue_map.keys(), timeout)
+        if timeout is None:
+            result = connection.rpop_multiple(queue_map.keys())
+        else:
+            result = connection.brpop(queue_map.keys(), timeout)
         if result is None:
             return None, None
         queue_key, task_id = decode_list(result)
         queue = queue_map[queue_key]
-        try:
-            task = Task.fetch(task_id)
-        except (NoSuchTaskError, DeserializationError) as e:
-            # Attach queue information to the exception for improved error reporting
-            e.task_id = task_id
-            e.queue = queue
-            raise e
+        task = Task.fetch(task_id)
         return task, queue
 
     def __repr__(self):

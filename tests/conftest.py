@@ -10,6 +10,10 @@ from rq import conf
 os.environ[conf.ENVIRONMENT_VARIABLE] = 'tests.app.settings'
 
 
+def pytest_unconfigure(config):
+    do_clear_redis()
+
+
 class ModifiableSettings:
     pass
 
@@ -30,11 +34,16 @@ def settings():
 
 @pytest.fixture(autouse=True, scope="function")
 def clear_redis():
+    do_clear_redis()
     yield
+
+
+def do_clear_redis():
     with conf.connection.pipeline() as pipeline:
         for key in conf.connection.scan_iter(conf.RedisKey('*')):
             pipeline.delete(key)
         pipeline.execute()
+    yield
 
 
 @pytest.fixture(scope="function")

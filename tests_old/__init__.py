@@ -39,15 +39,6 @@ def slow(f):
 
 
 class RQTestCase(unittest.TestCase):
-    """Base class to inherit test cases from for RQ.
-
-    It sets up the Redis connection (available via self.testconn), turns off
-    logging to the terminal and flushes the Redis database before and after
-    running each test.
-
-    Also offers assertQueueContains(queue, that_func) assertion method.
-    """
-
     @classmethod
     def setUpClass(cls):
         # Set up connection to Redis
@@ -67,17 +58,3 @@ class RQTestCase(unittest.TestCase):
     def tearDown(self):
         # Flush afterwards
         self.testconn.flushdb()
-
-    # Implement assertIsNotNone for Python runtimes < 2.7 or < 3.1
-    if not hasattr(unittest.TestCase, 'assertIsNotNone'):
-        def assertIsNotNone(self, value, *args):
-            self.assertNotEqual(value, None, *args)
-
-    @classmethod
-    def tearDownClass(cls):
-        logging.disable(logging.NOTSET)
-
-        # Pop the connection to Redis
-        testconn = pop_connection()
-        assert testconn == cls.testconn, \
-            'Wow, something really nasty happened to the Redis connection stack. Check your setup.'

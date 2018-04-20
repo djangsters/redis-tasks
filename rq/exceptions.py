@@ -26,9 +26,5 @@ class DeserializationError(Exception):
         self.raw_data = raw_data
 
 
-class DequeueTimeout(Exception):
-    pass
-
-
 class WorkerShutdown(BaseException):
     pass

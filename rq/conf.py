@@ -52,7 +52,17 @@ settings = Settings()
 
 @LazyObject
 def connection():
-    return redis.StrictRedis.from_url(settings.REDIS_URL)
+    return RQRedis.from_url(settings.REDIS_URL)
+
+
+class RQRedis(redis.StrictRedis):
+    # TODO: write test
+    def rpop_multi(self, keys):
+        for key in keys:
+            blob = self.rpop(key)
+            if blob is not None:
+                return key, blob
+        return None
 
 
 class RedisKey:

@@ -10,7 +10,7 @@ from contextlib import contextmanager, suppress
 from datetime import timedelta
 
 from .conf import connection, settings, RedisKey
-from .exceptions import (DequeueTimeout, NoSuchWorkerError, WorkerShutdown)
+from .exceptions import (NoSuchWorkerError, WorkerShutdown)
 from .queue import Queue
 from .registries import expire_registries, worker_registry
 from .task import Task, TaskOutcome, initialize_middlewares
@@ -139,14 +139,14 @@ class WorkerProcess:
 
         while True:
             self.worker.heartbeat()
-            try:
-                timeout = None if burst else settings.WORKER_HEARTBEAT_FREQ
-                with self.receive_shutdown():
-                    task, queue = Queue.dequeue_any(self.worker.queues, timeout)
-            except DequeueTimeout:
-                continue
-            if burst and task is None:
-                break
+            timeout = None if burst else settings.WORKER_HEARTBEAT_FREQ
+            with self.receive_shutdown():
+                task, queue = Queue.dequeue_multi(self.worker.queues, timeout)
+            if task is None:
+                if burst:
+                    break
+                else:
+                    continue
             yield task
 
     def process_task(self, task):
@@ -223,8 +223,8 @@ class WorkerProcess:
             self.log.debug('Initiating shutdown')
             raise ShutdownRequested()
         self.in_receive_shutdown += 1
+        # The signal handler might now raise ShutdownRequested
         try:
-            # The signal handler might now raise ShutdownRequested
             yield
         finally:
             self.in_receive_shutdown -= 1

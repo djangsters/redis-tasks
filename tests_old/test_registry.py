@@ -1,7 +1,5 @@
-# -*- coding: utf-8 -*-
 from __future__ import absolute_import
 
-from rq.compat import as_text
 from rq.task import Task, TaskStatus
 from rq.queue import FailedQueue, Queue
 from rq.utils import current_timestamp
