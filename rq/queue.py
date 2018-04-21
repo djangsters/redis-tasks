@@ -1,49 +1,40 @@
-from .exceptions import (NoSuchTaskError, DeserializationError)
-from .task import Task
-from .utils import utcnow, atomic_pipeline, decode_list
-from .conf import connection, RedisKey
+from .conf import RedisKey, connection
+from .exceptions import InvalidOperation
 from .registries import queue_registry
+from .task import Task
+from .utils import atomic_pipeline, decode_list
 
 
 class Queue(object):
     def __init__(self, name='default'):
         self.name = name
+        self.key = RedisKey('queue:' + name)
+        self.backup_key = RedisKey('queue:' + name + ':backup')
 
     @classmethod
     def all(cls):
         """Returns an iterable of all Queues."""
         return [cls(name) for name in queue_registry.get_names()]
 
-    @property
-    def key(self):
-        return self.key_for(self.name)
-
-    @classmethod
-    def key_for(cls, queue_name):
-        return RedisKey('queue:' + queue_name)
-
     def count(self):
         """Returns a count of all messages in the queue."""
         return connection.llen(self.key)
 
     @atomic_pipeline
-    def empty(self, *, pipeline):
+    def empty(self, *, force=False, pipeline):
         """Removes all messages on the queue."""
-        script = b"""
-            local prefix = "rq:task:"
-            local q = KEYS[1]
-            while true do
-                local task_id = redis.call("lpop", q)
-                if task_id == false then
-                    break
-                end
+        def transaction(pipeline):
+            backup_task_ids = pipeline.smembers(self.backup_key)
+            if not force:
+                queue_length = pipeline.llen(self.key)
+                if len(backup_task_ids) != queue_length:
+                    raise InvalidOperation("Queue has tasks in limbo")
+            pipeline.multi()
+            Task.delete_many(backup_task_ids, pipeline=pipeline)
+            pipeline.delete(self.key)
+            pipeline.delete(self.backup_key)
 
-                -- Delete the task data
-                redis.call("del", prefix..task_id)
-            end
-        """
-        script = connection.register_script(script)
-        script(keys=[self.key], client=pipeline)
+        connection.transaction(transaction, self.key, self.backup_key)
 
     @atomic_pipeline
     def delete(self, *, pipeline):
@@ -57,25 +48,7 @@ class Queue(object):
 
     def get_tasks(self):
         """Returns the tasks in the queue."""
-        task_ids = self.get_task_ids()
-
-        def fetch_task(task_id):
-            try:
-                return Task.fetch(task_id)
-            except NoSuchTaskError:
-                return None
-        return list(filter(None, map(fetch_task, task_ids)))
-
-    @atomic_pipeline
-    def push_task(self, task, *, pipeline, at_front=False):
-        """Pushes a task on the queue
-
-        `at_front` inserts the task at the front instead of the back of the queue"""
-        queue_registry.add(self)
-        if at_front:
-            pipeline.rpush(self.key, task.id)
-        else:
-            pipeline.lpush(self.key, task.id)
+        return [Task.fetch(x) for x in self.get_task_ids()]
 
     @atomic_pipeline
     def enqueue_call(self, *args, pipeline, **kwargs):
@@ -83,6 +56,37 @@ class Queue(object):
         task = Task(*args, **kwargs)
         task.enqeue(self, pipeline=pipeline)
         return task
+
+    @atomic_pipeline
+    def push_task_id(self, task_id, *, pipeline, at_front=False):
+        """Pushes a task on the queue
+
+        `at_front` inserts the task at the front instead of the back of the queue"""
+        queue_registry.add(self)
+        if at_front:
+            pipeline.rpush(self.key, task_id)
+        else:
+            pipeline.lpush(self.key, task_id)
+        pipeline.sadd(self.backup_key, task_id)
+
+    @atomic_pipeline
+    def remove(self, task, *, pipeline):
+        pipeline.lrem(self.key, 0, task.id)
+
+    @atomic_pipeline
+    def remove_backup(self, task, *, pipeline):
+        pipeline.srem(self.backup_key, task.id)
+
+    def get_limbo_task_ids(self):
+        # sdiffl might be expensive, so check lengths first. We can do this
+        # because only the queue key can ever loose tasks.
+        with connection.pipeline() as pipeline:
+            pipeline.llen(self.key)
+            pipeline.scard(self.backup_key)
+            queue_length, backup_length = pipeline.execute()
+            if queue_length == backup_length:
+                return []
+        return decode_list(connection.sdiffl(self.backup_key, self.key))
 
     @classmethod
     def dequeue_mutli(cls, queues, timeout):

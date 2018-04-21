@@ -1,4 +1,5 @@
 import logging
+import time
 import multiprocessing
 import os
 import signal
@@ -256,7 +257,27 @@ class Maintenance:
             worker = Worker.fetch(worker_id)
             worker.died()
 
+    def handle_limbo_tasks(self):
+        limbo_tasks = {(queue.name, task_id)
+                       for queue in Queue.all()
+                       for task_id in queue.get_limbo_task_ids()}
+        if not limbo_tasks:
+            return
+
+        # We might just be in a race. Give the workers time to handle the tasks.
+        time.sleep(settings.QUEUE_LIMBO_TIMEOUT)
+        limbo_tasks &= {(queue.name, task_id)
+                        for queue in Queue.all()
+                        for task_id in queue.get_limbo_task_ids()}
+
+        for queue_name, task_id in limbo_tasks:
+            logger.waring(f"Found abandoned limbo task {task_id} on "
+                          f"queue {queue_name}, reenqueuing")
+            Queue(queue_name).push_task_id(task_id, at_front=False)
+
     def run(self):
+        self.handle_dead_workers()
+        self.handle_limbo_tasks()
         expire_registries()
 
 

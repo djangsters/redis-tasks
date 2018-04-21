@@ -1,5 +1,6 @@
 import importlib
 import os
+import uuid
 import redis
 
 from rq import defaults
@@ -58,11 +59,29 @@ def connection():
 class RQRedis(redis.StrictRedis):
     # TODO: write test
     def rpop_multi(self, keys):
+        """Non-blocking variant of brpop"""
         for key in keys:
             blob = self.rpop(key)
             if blob is not None:
                 return key, blob
         return None
+
+    # TODO: test
+    def sdiffl(self, set_key, list_key):
+        """Return the set-difference between a set and a list"""
+        lua = self.register_script("""
+            local set, list, tmp = unpack(KEYS)
+            local count = tonumber(redis.call("LLEN", list))
+            for i = 0, count-1, 100 do
+                local items = redis.call("LRANGE", list, i, i+99)
+                redis.call("SADD", tmp, unpack(items))
+            end
+            local diff = redis.call('sdiff', set, tmp)
+            redis.call("DEL", tmp)
+            return diff
+        """)
+        tmp_key = RedisKey('sdiffl:' + str(uuid.uuid4()))
+        return lua(keys=[list_key, set_key, tmp_key])
 
 
 class RedisKey:
