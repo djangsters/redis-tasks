@@ -4,7 +4,6 @@ DEAD_WORKER_TTL = 60 * 60  # 1 hour
 WORKER_HEARTBEAT_FREQ = 10  # 10 seconds
 WORKER_HEARTBEAT_TIMEOUT = 60  # 1 minute
 MAINTENANCE_FREQ = 60 * 1  # 1 minute
-QUEUE_LIMBO_TIMEOUT = 5  # 5 seconds
 
 REDIS_URL = "redis://127.0.0.1:6379"
 REDIS_PREFIX = "rq"

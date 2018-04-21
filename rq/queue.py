@@ -9,7 +9,7 @@ class Queue(object):
     def __init__(self, name='default'):
         self.name = name
         self.key = RedisKey('queue:' + name)
-        self.backup_key = RedisKey('queue:' + name + ':backup')
+        self.block_key = RedisKey('block_queue:' + name)
 
     @classmethod
     def all(cls):
@@ -20,26 +20,22 @@ class Queue(object):
         """Returns a count of all messages in the queue."""
         return connection.llen(self.key)
 
-    @atomic_pipeline
-    def empty(self, *, force=False, pipeline):
+    def _empty_transaction(self, pipeline):
+        task_ids = pipeline.lrange(self.key, 0, -1)
+        pipeline.multi()
+        Task.delete_many(task_ids, pipeline=pipeline)
+        pipeline.delete(self.key)
+        pipeline.delete(self.block_key)
+
+    def empty(self):
         """Removes all messages on the queue."""
+        connection.transaction(self._empty_transaction, self.key)
+
+    def delete(self):
         def transaction(pipeline):
-            backup_task_ids = pipeline.smembers(self.backup_key)
-            if not force:
-                queue_length = pipeline.llen(self.key)
-                if len(backup_task_ids) != queue_length:
-                    raise InvalidOperation("Queue has tasks in limbo")
-            pipeline.multi()
-            Task.delete_many(backup_task_ids, pipeline=pipeline)
-            pipeline.delete(self.key)
-            pipeline.delete(self.backup_key)
-
-        connection.transaction(transaction, self.key, self.backup_key)
-
-    @atomic_pipeline
-    def delete(self, *, pipeline):
-        self.empty(pipeline=pipeline)
-        queue_registry.remove(self, pipeline=pipeline)
+            self._empty_transaction(pipeline)
+            queue_registry.remove(self, pipeline=pipeline)
+        connection.transaction(transaction, self.key)
 
     def get_task_ids(self):
         """Return the task IDs in the queue."""
@@ -58,56 +54,50 @@ class Queue(object):
         return task
 
     @atomic_pipeline
-    def push_task_id(self, task_id, *, pipeline, at_front=False):
+    def push(self, task, *, pipeline, at_front=False):
         """Pushes a task on the queue
 
         `at_front` inserts the task at the front instead of the back of the queue"""
         queue_registry.add(self)
         if at_front:
-            pipeline.rpush(self.key, task_id)
+            pipeline.rpush(self.key, task.id)
         else:
-            pipeline.lpush(self.key, task_id)
-        pipeline.sadd(self.backup_key, task_id)
+            pipeline.lpush(self.key, task.id)
+        pipeline.lpush(self.block_key, task.id)
 
     @atomic_pipeline
     def remove(self, task, *, pipeline):
         pipeline.lrem(self.key, 0, task.id)
 
-    @atomic_pipeline
-    def remove_backup(self, task, *, pipeline):
-        pipeline.srem(self.backup_key, task.id)
-
-    def get_limbo_task_ids(self):
-        # sdiffl might be expensive, so check lengths first. We can do this
-        # because only the queue key can ever loose tasks.
-        with connection.pipeline() as pipeline:
-            pipeline.llen(self.key)
-            pipeline.scard(self.backup_key)
-            queue_length, backup_length = pipeline.execute()
-            if queue_length == backup_length:
-                return []
-        return decode_list(connection.sdiffl(self.backup_key, self.key))
+    def dequeue(self, worker):
+        """Dequeue a task and set it as the current task for `worker`"""
+        # Use lua script to atomically clear the blocker key if queue is empty
+        lua = connection.register_script("""
+            local queue, blocker, worker_task_list = unpack(KEYS)
+            result = redis.call("RPOPLPUSH", queue, worker_task_list)
+            if result == false then
+                redis.call("DEL", blocker)
+            end
+            return result
+        """)
+        result = lua(keys=[self.key, self.block_key, worker.task_key])
+        if result is None:
+            return None
+        else:
+            task_id = result.decode()
+            worker.current_task_id = task_id
+            return Task.fetch(task_id)
 
     @classmethod
-    def dequeue_mutli(cls, queues, timeout):
-        """Returns the task at the front of the given queues.
+    def await_multi(cls, queues, timeout):
+        """Blocks until one of the passed queues contains a tasks.
 
-        If multiple queues hold tasks, the queue appearing earlier in the list
-        is used. If `timeout` is None, this function returns immedialtey,
-        otherwise it blocks for `timeout` seconds.
-
-        Retuns (queue, task) if a task was dequeued and (None, None) otherwise."""
-        queue_map = {q.key: q for q in queues}
-        if timeout is None:
-            result = connection.rpop_multiple(queue_map.keys())
-        else:
-            result = connection.brpop(queue_map.keys(), timeout)
+        Return the queue that contained a task or None if `timeout` was reached."""
+        queue_map = {q.block_key: q for q in queues}
+        result = connection.brpop(queue_map.keys(), timeout)
         if result is None:
-            return None, None
-        queue_key, task_id = decode_list(result)
-        queue = queue_map[queue_key]
-        task = Task.fetch(task_id)
-        return task, queue
+            return None
+        return queue_map[result[0].decode()]
 
     def __repr__(self):
         return '{0}({1!r})'.format(self.__class__.__name__, self.name)

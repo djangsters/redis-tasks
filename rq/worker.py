@@ -126,6 +126,7 @@ class WorkerProcess:
                 self.process_task(task)
                 tasks_processed += 1
 
+                self.maybe_shutdown()
                 self.worker.heartbeat()
                 self.maintenance.run_if_neccessary()
             else:
@@ -138,15 +139,31 @@ class WorkerProcess:
         self.log.debug('Listening on {0}...'.format(
             ', '.join(q.name for q in self.worker.queues)))
 
+        wait = False
         while True:
+            self.maybe_shutdown()
             self.worker.heartbeat()
-            timeout = None if burst else settings.WORKER_HEARTBEAT_FREQ
-            with self.receive_shutdown():
-                task, queue = Queue.dequeue_multi(self.worker.queues, timeout)
-            if task is None:
+            task = None
+            if wait:
+                with self.interruptible():
+                    queue = Queue.await_multi(self.worker.queues, settings.WORKER_HEARTBEAT_FREQ)
+                    if not queue:
+                        continue
+                # First, attempt to dequeue from the queue whose unblocker we
+                # consumed. This makes for more sensible behaviour in situations
+                # with multiple queues and workers.
+                task = queue.dequeue(self)
+            if not task:
+                for queue in self.worker.queues:
+                    self.maybe_shutdown()
+                    task = queue.dequeue(self)
+                    if task:
+                        break
+            if not task:
                 if burst:
                     break
                 else:
+                    wait = True
                     continue
             yield task
 
@@ -187,7 +204,7 @@ class WorkerProcess:
                 if utcnow() > timeout_at:
                     work_horse.send_signal(signal.SIGKILL)
                 try:
-                    with self.receive_shutdown():
+                    with self.interruptible():
                         work_horse.join(settings.WORKER_HEARTBEAT_FREQ)
                 except ShutdownRequested:
                     work_horse.send_signal(signal.SIGUSR1)
@@ -215,20 +232,23 @@ class WorkerProcess:
         with suppress(Exception):
             self.worker.set_shutdown_requested()
         if self.in_receive_shutdown:
-            self.log.debug('Initiating shutdown')
+            self.log.debug('Interrupted, initiating shutdown')
             raise ShutdownRequested()
 
     @contextmanager
-    def receive_shutdown(self):
-        if self.shutdown_requested:
-            self.log.debug('Initiating shutdown')
-            raise ShutdownRequested()
+    def interruptible(self):
+        self.maybe_shutdown()
         self.in_receive_shutdown += 1
-        # The signal handler might now raise ShutdownRequested
+        # The signal handler may now raise ShutdownRequested
         try:
             yield
         finally:
             self.in_receive_shutdown -= 1
+
+    def maybe_shutdown(self):
+        if self.shutdown_requested:
+            self.log.debug('Initiating shutdown')
+            raise ShutdownRequested()
 
 
 class Maintenance:
@@ -257,27 +277,8 @@ class Maintenance:
             worker = Worker.fetch(worker_id)
             worker.died()
 
-    def handle_limbo_tasks(self):
-        limbo_tasks = {(queue.name, task_id)
-                       for queue in Queue.all()
-                       for task_id in queue.get_limbo_task_ids()}
-        if not limbo_tasks:
-            return
-
-        # We might just be in a race. Give the workers time to handle the tasks.
-        time.sleep(settings.QUEUE_LIMBO_TIMEOUT)
-        limbo_tasks &= {(queue.name, task_id)
-                        for queue in Queue.all()
-                        for task_id in queue.get_limbo_task_ids()}
-
-        for queue_name, task_id in limbo_tasks:
-            logger.waring(f"Found abandoned limbo task {task_id} on "
-                          f"queue {queue_name}, reenqueuing")
-            Queue(queue_name).push_task_id(task_id, at_front=False)
-
     def run(self):
         self.handle_dead_workers()
-        self.handle_limbo_tasks()
         expire_registries()
 
 
@@ -300,12 +301,14 @@ class Worker:
 
     def __init__(self, id=None, *, description=None, queues=None,
                  fetch_id=None):
+        self.id = id or fetch_id
+        self.key = RedisKey('worker:' + self.id)
+        self.task_key = RedisKey('worker_task:' + self.id)
+
         if fetch_id:
-            self.id = fetch_id
             self.refresh()
             return
 
-        self.id = id
         self.description = description
         self.state = None
         self.queues = queues
@@ -315,25 +318,32 @@ class Worker:
         self.shutdown_requested_at = None
 
     def refresh(self):
-        obj = {k.decode(): v.decode() for k, v in connection.hmgetall(self.key)}
+        with connection.pipeline() as pipeline:
+            pipeline.hmgetall(self.key)
+            pipeline.lrange(self.task_key, 0, -1)
+            obj, task_id = pipeline.execute()
+
         if not obj:
             raise NoSuchWorkerError(self.id)
+        assert len(task_id) < 2
+        self.current_task_id = task_id.decode() if task_id else None
+
+        obj = {k.decode(): v.decode() for k, v in obj}
         self.state = obj['state']
         self.description = obj['description']
         if obj['queues']:
             self.queues = [Queue(q) for q in obj['queues'].split(',')]
         else:
             self.queues = []
-        self.current_task_id = obj['current_task_id']
         for k in ['started_at', 'shutdown_at', 'shutdown_requested_at']:
             setattr(self, k, utcparse(obj[k]) if obj.get(k) else None)
 
     @atomic_pipeline
     def _save(self, fields=None, *, pipeline):
-        string_fields = ['description', 'state', 'queues', 'current_task_id']
+        string_fields = ['description', 'state', 'queues']
         date_fields = ['started_at', 'shutdown_at', 'shutdown_requested_at']
         if fields is None:
-            fields = string_fields + date_fields
+            fields = string_fields + date_fields + 'current_task_id'
 
         deletes = []
         store = {}
@@ -347,15 +357,15 @@ class Worker:
                 store[field] = value
             elif field in date_fields:
                 store[field] = utcformat(value)
+            elif field == 'current_task_id':
+                pipeline.delete(self.task_key)
+                if self.current_task_id:
+                    pipeline.lpush(self.task_key, self.current_task_id)
             else:
                 raise AttributeError(f'{field} is not a valid attribute')
         if deletes:
             pipeline.hdel(self.key, *deletes)
         pipeline.hmset(self.key, store)
-
-    @property
-    def key(self):
-        return RedisKey('worker:' + self.id)
 
     def heartbeat(self):
         """Send a heartbeat.
@@ -373,9 +383,10 @@ class Worker:
     @atomic_pipeline
     def start_task(self, task, *, pipeline):
         assert self.state == WorkerState.IDLE
+        # The task should be assigned by the queue
+        assert self.current_task_id == task.id
         self.state = WorkerState.BUSY
-        self.current_task_id = task.id
-        self._save(['state', 'current_task_id'], pipeline=pipeline)
+        self._save(['state'], pipeline=pipeline)
 
     @atomic_pipeline
     def end_task(self, task, *, pipeline):
@@ -396,12 +407,12 @@ class Worker:
     @atomic_pipeline
     def died(self, *, pipeline):
         worker_registry.remove(self, pipeline=pipeline)
-        self.state = WorkerState.DEAD
         self.shutdown_at = utcnow()
         if self.current_task_id:
             task = Task.fetch(self.current_task_id)
             task.handle_worker_death(pipeline=pipeline)
             self.current_task_id = None
+        self.state = WorkerState.DEAD
         self._save(['state', 'current_task_id', 'shutdown_at'], pipeline=pipeline)
         pipeline.expire(self.key, settings.DEAD_WORKER_TTL)
 
@@ -411,6 +422,6 @@ class Worker:
                         utcformat(self.shutdown_requested_at))
 
     def fetch_current_task(self):
-        """Returns the task id of the currently executing task."""
+        """Returns the currently executing task."""
         if self.current_task_id:
             return Task.fetch(self.current_task_id)

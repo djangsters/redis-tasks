@@ -161,13 +161,13 @@ class Task:
         self.origin = queue.name
         self.enqueued_at = utcnow()
         self._save(pipeline=pipeline)
-        queue.push_task_id(self.id, pipeline=pipeline)
+        queue.push(self, pipeline=pipeline)
 
     @atomic_pipeline
     def requeue(self, *, pipeline):
         assert self.status is TaskStatus.RUNNING
         running_task_registry.remove(self, pipeline=pipeline)
-        rq.Queue(self.origin).push_task_id(self.id, at_front=True, pipeline=pipeline)
+        rq.Queue(self.origin).push(self, at_front=True, pipeline=pipeline)
         self.status = TaskStatus.QUEUED
         self.aborted_runs.append((self.started_at, utcnow()))
         self.started_at = None
@@ -176,7 +176,6 @@ class Task:
     @atomic_pipeline
     def set_running(self, worker, *, pipeline):
         assert self.status == TaskStatus.QUEUED
-        rq.Queue(self.origin).remove_backup(self, pipeline=pipeline)
         running_task_registry.add(self, worker, pipeline=pipeline)
         self.status = TaskStatus.RUNNING
         self.started_at = utcnow()
@@ -215,13 +214,18 @@ class Task:
 
     @atomic_pipeline
     def handle_worker_death(self, *, pipeline):
-        assert self.status == TaskStatus.RUNNING
-        try:
-            raise WorkerDied("Worker died")
-        except WorkerDied:
-            exc_info = sys.exc_info()
-        outcome = self._generate_outcome(*exc_info)
-        self.handle_outcome(outcome, pipeline=pipeline)
+        if self.status == TaskStatus.QUEUED:
+            # The worker died while moving the task
+            self.requeue(pipeline=pipeline)
+        elif self.status == TaskStatus.RUNNING:
+            try:
+                raise WorkerDied("Worker died")
+            except WorkerDied:
+                exc_info = sys.exc_info()
+            outcome = self._generate_outcome(*exc_info)
+            self.handle_outcome(outcome, pipeline=pipeline)
+        else:
+            raise Exception(f"Unexpected task status: {self.status}")
 
     def cancel(self):
         queue = rq.Queue(name=self.origin)
@@ -234,7 +238,6 @@ class Task:
             self.status = TaskStatus.CANCELED
             self.delete_many([self.id], pipeline=pipeline)
             queue.remove(self, pipeline=pipeline)
-            queue.remove_backup(self, pipeline=pipeline)
 
         connection.transaction(transaction, self.key)
 
