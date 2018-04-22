@@ -1,5 +1,4 @@
 from .conf import RedisKey, connection
-from .exceptions import InvalidOperation
 from .registries import queue_registry
 from .task import Task
 from .utils import atomic_pipeline, decode_list
@@ -9,7 +8,10 @@ class Queue(object):
     def __init__(self, name='default'):
         self.name = name
         self.key = RedisKey('queue:' + name)
-        self.block_key = RedisKey('block_queue:' + name)
+        # We use a separate key for the workers to wait on, as we need to do a
+        # multi-key blocking rpop on it, and redis does not have a variant of
+        # that operation that is not at risk of losing tasks.
+        self.unblock_key = RedisKey('unblock_queue:' + name)
 
     @classmethod
     def all(cls):
@@ -21,11 +23,11 @@ class Queue(object):
         return connection.llen(self.key)
 
     def _empty_transaction(self, pipeline):
-        task_ids = pipeline.lrange(self.key, 0, -1)
+        task_ids = decode_list(pipeline.lrange(self.key, 0, -1))
         pipeline.multi()
         Task.delete_many(task_ids, pipeline=pipeline)
         pipeline.delete(self.key)
-        pipeline.delete(self.block_key)
+        pipeline.delete(self.unblock_key)
 
     def empty(self):
         """Removes all messages on the queue."""
@@ -40,7 +42,7 @@ class Queue(object):
     def get_task_ids(self):
         """Return the task IDs in the queue."""
         return [task_id.decode() for task_id in
-                connection.lrange(self.key, 0, -1)]
+                reversed(connection.lrange(self.key, 0, -1))]
 
     def get_tasks(self):
         """Returns the tasks in the queue."""
@@ -50,7 +52,7 @@ class Queue(object):
     def enqueue_call(self, *args, pipeline, **kwargs):
         """Creates a task to represent the delayed function call and enqueues it."""
         task = Task(*args, **kwargs)
-        task.enqeue(self, pipeline=pipeline)
+        task.enqueue(self, pipeline=pipeline)
         return task
 
     @atomic_pipeline
@@ -58,12 +60,12 @@ class Queue(object):
         """Pushes a task on the queue
 
         `at_front` inserts the task at the front instead of the back of the queue"""
-        queue_registry.add(self)
+        queue_registry.add(self, pipeline=pipeline)
         if at_front:
             pipeline.rpush(self.key, task.id)
         else:
             pipeline.lpush(self.key, task.id)
-        pipeline.lpush(self.block_key, task.id)
+        pipeline.lpush(self.unblock_key, task.id)
 
     @atomic_pipeline
     def remove(self, task, *, pipeline):
@@ -71,16 +73,16 @@ class Queue(object):
 
     def dequeue(self, worker):
         """Dequeue a task and set it as the current task for `worker`"""
-        # Use lua script to atomically clear the blocker key if queue is empty
+        # Use lua script to atomically clear unblock_key if queue is empty
         lua = connection.register_script("""
-            local queue, blocker, worker_task_list = unpack(KEYS)
-            result = redis.call("RPOPLPUSH", queue, worker_task_list)
+            local queue, unblocker, worker_task_list = unpack(KEYS)
+            local result = redis.call("RPOPLPUSH", queue, worker_task_list)
             if result == false then
-                redis.call("DEL", blocker)
+                redis.call("DEL", unblocker)
             end
             return result
         """)
-        result = lua(keys=[self.key, self.block_key, worker.task_key])
+        result = lua(keys=[self.key, self.unblock_key, worker.task_key])
         if result is None:
             return None
         else:
@@ -93,7 +95,7 @@ class Queue(object):
         """Blocks until one of the passed queues contains a tasks.
 
         Return the queue that contained a task or None if `timeout` was reached."""
-        queue_map = {q.block_key: q for q in queues}
+        queue_map = {str(q.unblock_key): q for q in queues}
         result = connection.brpop(queue_map.keys(), timeout)
         if result is None:
             return None

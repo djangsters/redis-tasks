@@ -4,28 +4,6 @@ from .utils import current_timestamp, atomic_pipeline, decode_list
 from .conf import connection, settings, RedisKey
 
 
-class RunningTaskRegistry:
-    def __init__(self):
-        self.key = RedisKey('running_tasks')
-
-    @atomic_pipeline
-    def add(self, task, worker, *, pipeline):
-        pipeline.hset(self.key, task.id, worker.id)
-
-    @atomic_pipeline
-    def remove(self, task, *, pipeline):
-        pipeline.hdel(self.key, task.id)
-
-    def count(self):
-        return connection.hlen(self.key)
-
-    def __some_getall(self, task):
-        return connection.hgetall(self.key)
-
-
-running_task_registry = RunningTaskRegistry()
-
-
 class ExpiringRegistry:
     def __init__(self, name):
         self.key = RedisKey(name + '_tasks')
@@ -75,9 +53,28 @@ class WorkerRegistry:
         pipeline.zrem(self.key, worker.id)
 
     def get_alive_ids(self):
+        # TODO: why would we want this? We should probably always return all
+        # workers
         oldest_valid = self._get_oldest_valid_heartbeat()
         return decode_list(connection.zrangebyscore(
             self.key, oldest_valid, '+inf'))
+
+    def get_running_task_ids(self):
+        task_key_prefix = RedisKey('worker_task:')
+        lua = connection.register_script("""
+            local workers_key, task_key_prefix = unpack(KEYS)
+            local worker_ids = redis.call("ZRANGE", workers_key, 0, -1)
+            local task_ids = {}
+            for _, worker_id in ipairs(worker_ids) do
+                local task_key = task_key_prefix .. worker_id
+                local task_id = redis.call("LRANGE", task_key, 0, 0)[1]
+                if task_id ~= nil then
+                    table.insert(task_ids, task_id)
+                end
+            end
+            return task_ids
+        """)
+        return decode_list(lua(keys=[self.key, task_key_prefix]))
 
     def get_dead_ids(self):
         oldest_valid = self._get_oldest_valid_heartbeat()

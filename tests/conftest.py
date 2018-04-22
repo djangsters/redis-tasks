@@ -4,6 +4,7 @@ from contextlib import contextmanager
 from unittest import mock
 
 import pytest
+import redis
 
 from rq import conf
 
@@ -43,7 +44,6 @@ def do_clear_redis():
         for key in conf.connection.scan_iter(conf.RedisKey('*')):
             pipeline.delete(key)
         pipeline.execute()
-    yield
 
 
 @pytest.fixture(scope="function")
@@ -58,7 +58,7 @@ class AtomicRedis:
 
     def __getattr__(self, name):
         __tracebackhide__ = True
-        if name != "pipeline":
+        if name != "pipeline" and name != "transaction":
             raise Exception(f"Attempted call to connection.{name} in assert_atomic")
         if self._atomic_counter > 0:
             raise Exception(f"Second call to connection function in assert_atomic")

@@ -3,32 +3,8 @@ import pytest
 from rq import registries
 from rq.exceptions import NoSuchWorkerError
 from rq.conf import RedisKey
-from tests.factories import TaskFactory, WorkerFactory, QueueFactory
-
-
-def test_running_task_registry(assert_atomic, connection):
-    registry = registries.running_task_registry
-    task = TaskFactory()
-    task2 = TaskFactory()
-    worker = WorkerFactory()
-
-    assert registry.count() == 0
-    with assert_atomic():
-        with connection.pipeline() as pipe:
-            registry.add(task, worker, pipeline=pipe)
-            registry.add(task2, worker, pipeline=pipe)
-            pipe.execute()
-    assert registry.count() == 2
-
-    registry.remove(task2)
-    assert registry.count() == 1
-    registry.remove(task2)
-    assert registry.count() == 1
-
-    assert registry.count() == 1
-    with assert_atomic():
-        registry.remove(task)
-    assert registry.count() == 0
+from rq.task import TaskOutcome
+from tests.utils import TaskFactory, WorkerFactory, QueueFactory, stub
 
 
 def test_expiring_registry(connection, settings, mocker, assert_atomic):
@@ -91,7 +67,32 @@ def test_worker_registry(connection, settings, mocker, assert_atomic):
     assert registry.get_dead_ids() == []
 
 
-def test_queue_registry(assert_atomic):
+def test_worker_reg_running_tasks():
+    registry = registries.worker_registry
+    queue = QueueFactory()
+    t1 = queue.enqueue_call(stub)
+    t2 = queue.enqueue_call(stub)
+    worker1 = WorkerFactory(queues=[queue])
+    worker2 = WorkerFactory(queues=[queue])
+    worker1.startup()
+    worker2.startup()
+
+    assert registry.get_running_task_ids() == []
+    queue.push(t1)
+    queue.dequeue(worker1)
+    assert registry.get_running_task_ids() == [t1.id]
+    worker1.start_task(t1)
+
+    queue.push(t2)
+    queue.dequeue(worker2)
+    worker2.start_task(t2)
+    assert set(registry.get_running_task_ids()) == {t1.id, t2.id}
+    worker1.end_task(t1, TaskOutcome("success"))
+    assert registry.get_running_task_ids() == [t2.id]
+
+
+def test_queue_registry(assert_atomic, connection):
+    print(connection.keys())
     registry = registries.queue_registry
     queue1 = QueueFactory()
     queue2 = QueueFactory()

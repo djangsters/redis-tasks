@@ -139,38 +139,33 @@ class WorkerProcess:
         self.log.debug('Listening on {0}...'.format(
             ', '.join(q.name for q in self.worker.queues)))
 
-        wait = False
         while True:
             self.maybe_shutdown()
             self.worker.heartbeat()
             task = None
-            if wait:
+            # The queue unblocker might loose entries on worker shutdown, so we
+            # regularly try to dequeue unconditionally
+            for queue in self.worker.queues:
+                self.maybe_shutdown()
+                task = queue.dequeue(self.worker)
+                if task:
+                    break
+            if not task and not burst:
                 with self.interruptible():
                     queue = Queue.await_multi(self.worker.queues, settings.WORKER_HEARTBEAT_FREQ)
                     if not queue:
                         continue
                 # First, attempt to dequeue from the queue whose unblocker we
-                # consumed. This makes for more sensible behaviour in situations
+                # consumed. This makes for more sensible behavior in situations
                 # with multiple queues and workers.
-                task = queue.dequeue(self)
-            if not task:
-                for queue in self.worker.queues:
-                    self.maybe_shutdown()
-                    task = queue.dequeue(self)
-                    if task:
-                        break
-            if not task:
-                if burst:
-                    break
-                else:
-                    wait = True
-                    continue
-            yield task
+                task = queue.dequeue(self.worker)
+            if task:
+                yield task
+            elif burst:
+                break
 
     def process_task(self, task):
-        with connection.pipeline() as pipeline:
-            self.worker.start_task(task, pipeline=pipeline)
-            task.set_running(self, pipeline=pipeline)
+        self.worker.start_task(task)
 
         self.log.info('{0}: {1} ({2})'.format(task.origin, task.description, task.id))
         try:
@@ -179,9 +174,7 @@ class WorkerProcess:
             exc_string = ''.join(traceback.format_exception(*sys.exc_info()))
             outcome = TaskOutcome('failure', error_message=exc_string)
 
-        with connection.pipeline() as pipeline:
-            self.worker.end_task(task, pipeline=pipeline)
-            task.handle_outcome(outcome, pipeline=pipeline)
+        self.worker.end_task(task, outcome)
 
         self.log.info('{0}: {1} ({2})'.format(task.origin, 'Task OK', task.id))
         return True
@@ -343,7 +336,7 @@ class Worker:
         string_fields = ['description', 'state', 'queues']
         date_fields = ['started_at', 'shutdown_at', 'shutdown_requested_at']
         if fields is None:
-            fields = string_fields + date_fields + 'current_task_id'
+            fields = string_fields + date_fields + ['current_task_id']
 
         deletes = []
         store = {}
@@ -351,16 +344,16 @@ class Worker:
             value = getattr(self, field)
             if field == 'queues':
                 store['queues'] = ','.join(q.name for q in self.queues),
+            elif field == 'current_task_id':
+                pipeline.delete(self.task_key)
+                if value:
+                    pipeline.lpush(self.task_key, value)
             elif value is None:
                 deletes.append(field)
             elif field in string_fields:
                 store[field] = value
             elif field in date_fields:
                 store[field] = utcformat(value)
-            elif field == 'current_task_id':
-                pipeline.delete(self.task_key)
-                if self.current_task_id:
-                    pipeline.lpush(self.task_key, self.current_task_id)
             else:
                 raise AttributeError(f'{field} is not a valid attribute')
         if deletes:
@@ -375,7 +368,7 @@ class Worker:
 
     @atomic_pipeline
     def startup(self, *, pipeline):
-        self.log.debug(f'Registering birth of worker {self.description} ({self.id})')
+        logger.debug(f'Registering birth of worker {self.description} ({self.id})')
         self.state = WorkerState.IDLE
         worker_registry.add(self, pipeline=pipeline)
         self._save(pipeline=pipeline)
@@ -387,13 +380,15 @@ class Worker:
         assert self.current_task_id == task.id
         self.state = WorkerState.BUSY
         self._save(['state'], pipeline=pipeline)
+        task.set_running(self, pipeline=pipeline)
 
     @atomic_pipeline
-    def end_task(self, task, *, pipeline):
+    def end_task(self, task, outcome, *, pipeline):
         assert self.state == WorkerState.BUSY
         self.state = WorkerState.IDLE
         self.current_task_id = None
         self._save(['state', 'current_task_id'], pipeline=pipeline)
+        task.handle_outcome(outcome, pipeline=pipeline)
 
     @atomic_pipeline
     def shutdown(self, *, pipeline):

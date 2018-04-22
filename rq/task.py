@@ -6,8 +6,8 @@ import traceback
 import rq
 from .conf import connection, settings, RedisKey
 from .exceptions import NoSuchTaskError, TaskAborted, WorkerShutdown, WorkerDied, InvalidOperation
-from .registries import (failed_task_registry, finished_task_registry,
-                         running_task_registry)
+from .registries import failed_task_registry, finished_task_registry
+
 from .utils import (enum, import_attribute, atomic_pipeline, utcformat, utcnow,
                     utcparse, LazyObject, deserialize, serialize)
 
@@ -33,6 +33,13 @@ class TaskProperties:
     def decorate(self, f):
         f._rq_task_properties = self
         return f
+
+
+class TaskOutcome:
+    def __init__(self, outcome, *, message=None):
+        assert outcome in ['success', 'failure', 'aborted']
+        self.outcome = outcome
+        self.message = message
 
 
 @LazyObject
@@ -100,13 +107,6 @@ class TaskMiddleware:
         pass
 
 
-class TaskOutcome:
-    def __init__(self, outcome, *, message=None):
-        assert outcome in ['success', 'failure', 'aborted']
-        self.outcome = outcome
-        self.message = message
-
-
 class Task:
     def __init__(self, func=None, args=None, kwargs=None, *,
                  fetch_id=None, description=None, meta=None):
@@ -117,15 +117,11 @@ class Task:
 
         self.id = str(uuid.uuid4())
 
-        if inspect.isfunction(func) or inspect.isbuiltin(func):
+        try:
             self.func_name = '{0}.{1}'.format(func.__module__, func.__name__)
             assert self.func == func
-        elif isinstance(func, str):
-            self.func_name = func
-        else:
-            raise TypeError('Expected a function or string, but got: {0}'.format(func))
-        if self.func_name.startswith('__main__'):
-            raise ValueError("The task's function needs to be importable by the workers")
+        except Exception as e:
+            raise ValueError('The given task function is not importable') from e
 
         if args is None:
             args = ()
@@ -166,7 +162,6 @@ class Task:
     @atomic_pipeline
     def requeue(self, *, pipeline):
         assert self.status is TaskStatus.RUNNING
-        running_task_registry.remove(self, pipeline=pipeline)
         rq.Queue(self.origin).push(self, at_front=True, pipeline=pipeline)
         self.status = TaskStatus.QUEUED
         self.aborted_runs.append((self.started_at, utcnow()))
@@ -176,7 +171,6 @@ class Task:
     @atomic_pipeline
     def set_running(self, worker, *, pipeline):
         assert self.status == TaskStatus.QUEUED
-        running_task_registry.add(self, worker, pipeline=pipeline)
         self.status = TaskStatus.RUNNING
         self.started_at = utcnow()
         self._save(['status', 'started_at'], pipeline=pipeline)
@@ -184,7 +178,6 @@ class Task:
     @atomic_pipeline
     def set_finished(self, *, pipeline):
         assert self.status == TaskStatus.RUNNING
-        running_task_registry.remove(self, pipeline=pipeline)
         finished_task_registry.add(self, pipeline=pipeline)
         self.status = TaskStatus.FINISHED
         self.ended_at = utcnow()
@@ -193,7 +186,6 @@ class Task:
     @atomic_pipeline
     def set_failed(self, error_message, *, pipeline):
         assert self.status == TaskStatus.RUNNING
-        running_task_registry.remove(self, pipeline=pipeline)
         failed_task_registry.add(self, pipeline=pipeline)
         self.status = TaskStatus.FAILED
         self.error_message = error_message
@@ -289,15 +281,15 @@ class Task:
 
         try:
             self.func_name = obj['func_name'].decode()
-            self._args = deserialize(obj['args'])
-            self._kwargs = deserialize(obj['kwargs'])
+            self.args = deserialize(obj['args'])
+            self.kwargs = deserialize(obj['kwargs'])
         except KeyError:
             raise NoSuchTaskError('Unexpected task format: {0}'.format(obj))
 
         for key in ['status', 'origin', 'description', 'error_message']:
             setattr(self, key, obj[key].decode() if key in obj else None)
 
-        for key in ['enqueue_at', 'started_at', 'ended_at']:
+        for key in ['enqueued_at', 'started_at', 'ended_at']:
             setattr(self, key, utcparse(obj[key].decode()) if key in obj else None)
 
         self.meta = deserialize(obj['meta']) if obj.get('meta') else {}
@@ -306,7 +298,7 @@ class Task:
     @atomic_pipeline
     def _save(self, fields=None, *, pipeline=None):
         string_fields = ['func_name', 'status', 'description', 'origin', 'error_message']
-        date_fields = ['enqueue_at', 'started_at', 'ended_at']
+        date_fields = ['enqueued_at', 'started_at', 'ended_at']
         data_fields = ['args', 'kwargs', 'meta', 'aborted_runs']
         if fields is None:
             fields = string_fields + date_fields + data_fields
@@ -382,9 +374,5 @@ class Task:
         return '{0}({1})'.format(self.func_name, args)
 
     def __repr__(self):
-        return '{0}({1!r}, enqueued_at={2!r})'.format(
-            self.__class__.__name__, self.id, self.enqueued_at)
-
-    def __str__(self):
         return '<{0} {1}: {2}>'.format(
             self.__class__.__name__, self.id, self.description)
