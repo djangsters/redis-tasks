@@ -1,15 +1,18 @@
-import inspect
 import uuid
+import logging
 import sys
 import traceback
+from contextlib import ExitStack
 
 import rq
-from .conf import connection, settings, RedisKey
+from .conf import connection, settings, RedisKey, task_middlewares
 from .exceptions import NoSuchTaskError, TaskAborted, WorkerShutdown, WorkerDied, InvalidOperation
 from .registries import failed_task_registry, finished_task_registry
 
 from .utils import (enum, import_attribute, atomic_pipeline, utcformat, utcnow,
-                    utcparse, LazyObject, deserialize, serialize)
+                    utcparse, LazyObject, deserialize, serialize, generate_callstring)
+
+logger = logging.getLogger(__name__)
 
 TaskStatus = enum(
     'TaskStatus',
@@ -26,9 +29,9 @@ def rq_task(*args, **kwargs):
 
 
 class TaskProperties:
-    def __init__(self, is_reentrant=False, timeout=None):
-        self.is_reentrant = is_reentrant
-        self.timeout = timeout
+    def __init__(self, reentrant=False, timeout=None):
+        self.reentrant = reentrant
+        self.timeout = timeout or settings.DEFAULT_TASK_TIMEOUT
 
     def decorate(self, f):
         f._rq_task_properties = self
@@ -41,14 +44,11 @@ class TaskOutcome:
         self.outcome = outcome
         self.message = message
 
-
-@LazyObject
-def task_middlewares():
-    return [import_attribute(x) for x in settings.TASK_MIDDLEWARES]
-
-
-def initialize_middlewares():
-    list(task_middlewares)
+    def __repr__(self):
+        args = [self.outcome]
+        if self.message:
+            args.append(f'message={self.message!r}')
+        return 'TaskOutcome({})'.format(", ".join(args))
 
 
 class TaskMiddleware:
@@ -108,8 +108,7 @@ class TaskMiddleware:
 
 
 class Task:
-    def __init__(self, func=None, args=None, kwargs=None, *,
-                 fetch_id=None, description=None, meta=None):
+    def __init__(self, func=None, args=None, kwargs=None, *, fetch_id=None):
         if fetch_id:
             self.id = fetch_id
             self.refresh()
@@ -119,7 +118,7 @@ class Task:
 
         try:
             self.func_name = '{0}.{1}'.format(func.__module__, func.__name__)
-            assert self.func == func
+            assert self._get_func() == func
         except Exception as e:
             raise ValueError('The given task function is not importable') from e
 
@@ -136,10 +135,10 @@ class Task:
 
         self.error_message = None
 
-        self.description = description or self.get_call_string()
+        self.description = generate_callstring(self.func_name, self.args, self.kwargs)
         self.status = None
         self.origin = None
-        self.meta = meta or {}
+        self.meta = {}
 
         self.enqueued_at = None
         self.started_at = None
@@ -149,6 +148,14 @@ class Task:
     @classmethod
     def fetch(cls, id):
         return cls(fetch_id=id)
+
+    @property
+    def key(self):
+        return self.key_for(self.id)
+
+    @classmethod
+    def key_for(cls, task_id):
+        return RedisKey('task:' + task_id)
 
     @atomic_pipeline
     def enqueue(self, queue, *, pipeline):
@@ -161,7 +168,7 @@ class Task:
 
     @atomic_pipeline
     def requeue(self, *, pipeline):
-        assert self.status is TaskStatus.RUNNING
+        assert self.status == TaskStatus.RUNNING
         rq.Queue(self.origin).push(self, at_front=True, pipeline=pipeline)
         self.status = TaskStatus.QUEUED
         self.aborted_runs.append((self.started_at, utcnow()))
@@ -208,7 +215,7 @@ class Task:
     def handle_worker_death(self, *, pipeline):
         if self.status == TaskStatus.QUEUED:
             # The worker died while moving the task
-            self.requeue(pipeline=pipeline)
+            rq.Queue(self.origin).push(self, at_front=True, pipeline=pipeline)
         elif self.status == TaskStatus.RUNNING:
             try:
                 raise WorkerDied("Worker died")
@@ -221,52 +228,31 @@ class Task:
 
     def cancel(self):
         queue = rq.Queue(name=self.origin)
+        try:
+            queue.remove_and_delete(self)
+        except NoSuchTaskError:
+            raise InvalidOperation("Only enqueued jobs can be canceled")
+        self.status = TaskStatus.CANCELED
 
-        def transaction(pipeline):
-            status = pipeline.hget(self.key, 'status')
-            if status != TaskStatus.QUEUED:
-                raise InvalidOperation("Only enqueued jobs can be canceled")
-            pipeline.multi()
-            self.status = TaskStatus.CANCELED
-            self.delete_many([self.id], pipeline=pipeline)
-            queue.remove(self, pipeline=pipeline)
-
-        connection.transaction(transaction, self.key)
-
-    @atomic_pipeline
-    def _set_status(self, status, *, pipeline):
-        self.status = status
-        pipeline.hset(self.key, 'status', self.status)
-
-    @property
-    def func(self):
+    def _get_func(self):
         return import_attribute(self.func_name)
 
-    @property
-    def func_properties(self):
-        if hasattr(self.func, '_rq_task_properties'):
-            return self.func._rq_task_properties
-        else:
-            return TaskProperties()
+    def _get_properties(self):
+        return getattr(self._get_func(), '_rq_task_properties', TaskProperties())
 
     @property
     def is_reentrant(self):
-        return self.func_properties.is_reentrant
+        try:
+            return self._get_properties().reentrant
+        except Exception:
+            return TaskProperties().reentrant
 
     @property
     def timeout(self):
-        if self.func_properties.timeout is None:
-            return settings.DEFAULT_TASK_TIMEOUT
-        else:
-            return self.func_properties.timeout
-
-    @property
-    def key(self):
-        return self.key_for(self.id)
-
-    @classmethod
-    def key_for(cls, task_id):
-        return RedisKey('task:' + task_id)
+        try:
+            return self._get_properties().timeout
+        except Exception:
+            return TaskProperties().timeout
 
     @classmethod
     @atomic_pipeline
@@ -279,12 +265,9 @@ class Task:
         if len(obj) == 0:
             raise NoSuchTaskError('No such task: {0}'.format(key))
 
-        try:
-            self.func_name = obj['func_name'].decode()
-            self.args = deserialize(obj['args'])
-            self.kwargs = deserialize(obj['kwargs'])
-        except KeyError:
-            raise NoSuchTaskError('Unexpected task format: {0}'.format(obj))
+        self.func_name = obj['func_name'].decode()
+        self.args = deserialize(obj['args'])
+        self.kwargs = deserialize(obj['kwargs'])
 
         for key in ['status', 'origin', 'description', 'error_message']:
             setattr(self, key, obj[key].decode() if key in obj else None)
@@ -319,59 +302,60 @@ class Task:
                 raise AttributeError(f'{field} is not a valid attribute')
         if deletes:
             pipeline.hdel(self.key, *deletes)
-        pipeline.hmset(self.key, store)
+        if store:
+            pipeline.hmset(self.key, store)
 
     def save_meta(self):
         self._save(['meta'])
 
-    def execute(self, pre_run=None, post_run=None):
-        exc_info = []
+    def execute(self, *, shutdown_cm=ExitStack()):
+        """Run the task using middleware.
+
+        The `shutdown_cm` parameter is a context manager that will wrap the part
+        of the execution in which `WorkerShutdown` is allowed to be raised.
+
+        Returns a TaskOutcome."""
+        exc_info = (None, None, None)
         try:
             executed_middlewares = []
-            for middleware in task_middlewares:
+            for middleware_constructor in task_middlewares:
+                # This loop might get cut short by a middleware raising an exception
+                middleware = middleware_constructor()
                 executed_middlewares.append(middleware)
                 middleware.before(self)
             try:
-                if pre_run:
-                    pre_run()
-                self.func(*self.args, **self.kwargs)
-                if post_run:
-                    post_run()
+                with shutdown_cm:
+                    func = self._get_func()
+                    func(*self.args, **self.kwargs)
             except WorkerShutdown as e:
                 raise TaskAborted("Worker shutdown") from e
         except Exception:
             exc_info = sys.exc_info()
 
-        outcome = self._generate_outcome(self, *exc_info)
+        outcome = self._generate_outcome(*exc_info)
 
         for middleware in reversed(executed_middlewares):
-            middleware.after(self)
+            try:
+                middleware.after(self)
+            except Exception:
+                logger.exception("middleware.after() raised an exception")
         return outcome
 
     def _generate_outcome(self, *exc_info):
         for middleware in reversed(task_middlewares):
             try:
-                if middleware.process_outcome(self, *exc_info):
-                    exc_info = []
+                if middleware().process_outcome(self, *exc_info):
+                    exc_info = (None, None, None)
             except Exception:
                 exc_info = sys.exc_info()
 
-        if not exc_info or not exc_info[0]:
+        if not exc_info[0]:
             return TaskOutcome('success')
         elif isinstance(exc_info[1], TaskAborted):
             return TaskOutcome('aborted', message=exc_info[1].message)
         else:
             exc_string = ''.join(traceback.format_exception(*exc_info))
             return TaskOutcome('failure', message=exc_string)
-
-    def get_call_string(self):
-        """Returns a string representation of the call, formatted as a regular
-        Python function invocation statement."""
-        arg_list = [repr(arg) for arg in self.args]
-        arg_list += [f'{k}={v!r}' for k, v in self.kwargs.items()]
-        args = ', '.join(arg_list)
-
-        return '{0}({1})'.format(self.func_name, args)
 
     def __repr__(self):
         return '<{0} {1}: {2}>'.format(

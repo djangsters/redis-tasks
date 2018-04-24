@@ -1,13 +1,16 @@
 
 import pytest
+import random
 import datetime
+import uuid
+from types import SimpleNamespace
 
-from rq import Task, Queue
+from rq import Task, Queue, rq_task
 from rq.task import TaskStatus, TaskOutcome
-from rq.exceptions import NoSuchTaskError
-from rq.registries import finished_task_registry, failed_task_registry
-from rq.utils import utcnow
-from tests.utils import TaskFactory, WorkerFactory, QueueFactory, stub, id_list
+from rq.exceptions import NoSuchTaskError, InvalidOperation
+from rq.registries import finished_task_registry, failed_task_registry, worker_registry
+from rq.utils import utcnow, decode_list
+from tests.utils import TaskFactory, WorkerFactory, QueueFactory, reentrant_stub, stub, id_list
 
 
 class SomeClass:
@@ -43,9 +46,6 @@ def test_init():
     t = Task(stub, ["foo"], {"bar": "a"})
     assert t.description == "tests.utils.stub('foo', bar='a')"
 
-    t = Task(stub, description="mydesc")
-    assert t.description == "mydesc"
-
 
 class NowMocker:
     def __init__(self, mocker):
@@ -62,9 +62,10 @@ class NowMocker:
 
 def test_state_transistions(assert_atomic, connection, mocker):
     time = NowMocker(mocker)
-    task = Task(stub)
-    q = Queue('foo')
+    task = Task(reentrant_stub)
+    q = QueueFactory()
     w = WorkerFactory()
+    w.startup()
 
     # enqueue
     time.step()
@@ -78,12 +79,16 @@ def test_state_transistions(assert_atomic, connection, mocker):
         assert t.status == TaskStatus.QUEUED
         assert t.origin == q.name
 
-    # set_running
+    # dequeue
     task = q.dequeue(w)
     assert q.get_task_ids() == []
+    assert worker_registry.get_running_task_ids() == [task.id]
+
+    # set_running
     time.step()
     with assert_atomic():
-        task.set_running(WorkerFactory())
+        w.start_task(task)
+    assert worker_registry.get_running_task_ids() == [task.id]
     for t in [task, Task.fetch(task.id)]:
         assert t.status == TaskStatus.RUNNING
         assert t.started_at == time.now
@@ -91,37 +96,189 @@ def test_state_transistions(assert_atomic, connection, mocker):
     # requeue
     time.step()
     with assert_atomic():
-        task.requeue()
+        w.end_task(task, TaskOutcome("aborted"))
+    assert worker_registry.get_running_task_ids() == []
     assert q.get_task_ids() == [task.id]
     for t in [task, Task.fetch(task.id)]:
         assert t.status == TaskStatus.QUEUED
         assert t.started_at is None
 
     # set_finished
-    task.set_running(WorkerFactory())
+    task = q.dequeue(w)
+    w.start_task(task)
     time.step()
     with assert_atomic():
-        task.set_finished()
+        w.end_task(task, TaskOutcome("success"))
+    assert q.get_task_ids() == []
     assert finished_task_registry.get_task_ids() == [task.id]
     for t in [task, Task.fetch(task.id)]:
         assert t.status == TaskStatus.FINISHED
         assert t.ended_at == time.now
 
     # set_failed
-    task = Task(stub)
-    with assert_atomic():
-        with connection.pipeline() as pipe:
-            task.enqueue(q, pipeline=pipe)
-            task.set_running(w, pipeline=pipe)
-            pipe.execute()
+    task = q.enqueue_call(stub)
+    task = q.dequeue(w)
+    w.start_task(task)
+    assert worker_registry.get_running_task_ids() == [task.id]
     time.step()
     with assert_atomic():
-        task.set_failed("my error")
+        w.end_task(task, TaskOutcome("failure", message="my error"))
+    assert worker_registry.get_running_task_ids() == []
     assert failed_task_registry.get_task_ids() == [task.id]
     for t in [task, Task.fetch(task.id)]:
         assert t.status == TaskStatus.FAILED
         assert t.error_message == "my error"
         assert t.ended_at == time.now
+
+
+def test_cancel(assert_atomic, connection):
+    q = QueueFactory()
+    task = q.enqueue_call(stub)
+    with assert_atomic():
+        task.cancel()
+    assert q.get_task_ids() == []
+    assert task.status == TaskStatus.CANCELED
+    assert not connection.exists(task.key)
+
+    w = WorkerFactory()
+    w.startup()
+    task = q.enqueue_call(stub)
+    q.dequeue(w)
+    with pytest.raises(InvalidOperation):
+        with assert_atomic():
+            task.cancel()
+    assert worker_registry.get_running_task_ids() == [task.id]
+    assert connection.exists(task.key)
+
+
+def test_worker_death(assert_atomic, connection):
+    def setup(func):
+        w = WorkerFactory()
+        w.startup()
+        q.enqueue_call(func)
+        task = q.dequeue(w)
+        return task, w
+
+    q = QueueFactory()
+
+    # Worker died before starting work on the task
+    task, w = setup(stub)
+    assert worker_registry.get_running_task_ids() == [task.id]
+    with assert_atomic(exceptions=['hgetall']):
+        w.died()
+    assert q.get_task_ids() == [task.id]
+    assert worker_registry.get_running_task_ids() == []
+    assert failed_task_registry.get_task_ids() == []
+
+    # Worker died after starting non-reentrant task
+    q.empty()
+    task, w = setup(stub)
+    assert worker_registry.get_running_task_ids() == [task.id]
+    w.start_task(task)
+    with assert_atomic(exceptions=['hgetall']):
+        w.died()
+    assert q.get_task_ids() == []
+    assert worker_registry.get_running_task_ids() == []
+    assert failed_task_registry.get_task_ids() == [task.id]
+
+    # Worker died after starting reentrant task
+    connection.delete(failed_task_registry.key)
+    task, w = setup(reentrant_stub)
+    assert worker_registry.get_running_task_ids() == [task.id]
+    with assert_atomic():
+        w.start_task(task)
+    with assert_atomic(exceptions=['hgetall']):
+        w.died()
+    assert q.get_task_ids() == [task.id]
+    assert worker_registry.get_running_task_ids() == []
+    assert failed_task_registry.get_task_ids() == []
+
+
+def test_get_func():
+    assert Task(stub)._get_func() == stub
+
+
+@rq_task(timeout=42)
+def my_timeout_func():
+    pass
+
+
+def test_get_properties(settings):
+    assert not Task(stub).is_reentrant
+    assert Task(reentrant_stub).is_reentrant
+
+    assert Task(stub).timeout == settings.DEFAULT_TASK_TIMEOUT
+    assert Task(my_timeout_func).timeout == 42
+
+
+def test_delete_many(connection, assert_atomic):
+    tasks = [Task(stub) for i in range(5)]
+    for t in tasks:
+        t._save()
+
+    with assert_atomic():
+        Task.delete_many([tasks[0].id, tasks[1].id])
+
+    for t in tasks[0:2]:
+        assert not connection.exists(t.key)
+    for t in tasks[2:5]:
+        assert connection.exists(t.key)
+
+
+def test_persistence(assert_atomic, connection):
+    fields = {'func_name', 'args', 'kwargs', 'status', 'origin', 'description',
+              'error_message', 'enqueued_at', 'started_at', 'ended_at', 'meta',
+              'aborted_runs'}
+
+    def randomize_data(task):
+        string_fields = ['func_name', 'status', 'description', 'origin', 'error_message']
+        date_fields = ['enqueued_at', 'started_at', 'ended_at']
+        for f in string_fields:
+            setattr(task, f, str(uuid.uuid4()))
+        for f in date_fields:
+            setattr(task, f, datetime.datetime(random.randint(1000, 9999), 1, 1))
+
+        task.args = tuple(str(uuid.uuid4()) for i in range(4))
+        task.kwargs = {str(uuid.uuid4()): ["d"]}
+        task.meta = {"x": [str(uuid.uuid4())]}
+        task.aborted_runs = ["foo", "bar", str(uuid.uuid4())]
+
+    def as_dict(task):
+        return {f: getattr(task, f) for f in fields}
+
+    task = Task(stub)
+    with assert_atomic():
+        task._save()
+    assert set(decode_list(connection.hkeys(task.key))) <= fields
+    assert as_dict(Task.fetch(task.id)) == as_dict(task)
+
+    randomize_data(task)
+    task._save()
+    assert as_dict(Task.fetch(task.id)) == as_dict(task)
+
+    # only deletes
+    task.enqueued_at = None
+    task.error_message = None
+    task._save(['enqueued_at', 'error_message'])
+    assert task.enqueued_at is None
+    assert task.error_message is None
+
+    for i in range(5):
+        store = random.sample(fields, 7)
+        copy = Task.fetch(task.id)
+        randomize_data(copy)
+        copy._save(store)
+        for f in store:
+            setattr(task, f, getattr(copy, f))
+        assert as_dict(Task.fetch(task.id)) == as_dict(task)
+
+    copy = Task.fetch(task.id)
+    randomize_data(copy)
+    copy.meta = task.meta = {"new_meta": "here"}
+    copy.save_meta()
+    copy.refresh()
+    assert as_dict(copy) == as_dict(task)
+    assert as_dict(Task.fetch(task.id)) == as_dict(task)
 
 
 def test_init_save_fetch_delete(connection, assert_atomic):
@@ -139,7 +296,3 @@ def test_init_save_fetch_delete(connection, assert_atomic):
     assert not connection.exists(t.key)
     with pytest.raises(NoSuchTaskError):
         Task.fetch(t.id)
-
-
-def test_lifetimes():
-    pass  # TODO

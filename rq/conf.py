@@ -1,11 +1,12 @@
 import importlib
+import logging
 import os
-import uuid
 import redis
 
 from rq import defaults
-from .utils import LazyObject
+from .utils import LazyObject, import_attribute
 
+logger = logging.getLogger(__name__)
 ENVIRONMENT_VARIABLE = "RQ_SETTINGS_MODULE"
 
 
@@ -54,6 +55,15 @@ settings = Settings()
 @LazyObject
 def connection():
     return redis.StrictRedis.from_url(settings.REDIS_URL)
+
+
+@LazyObject
+def task_middlewares():
+    # TODO: test this
+    def middleware_constructor(class_path):
+        return import_attribute(class_path)()
+
+    return [middleware_constructor(x) for x in settings.TASK_MIDDLEWARES]
 
 
 class RedisKey:

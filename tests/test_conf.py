@@ -18,14 +18,14 @@ def test_settings(mocker):
 
 
 def test_mock_settings(settings):
-    assert settings.DEFAULT_JOB_TIMEOUT == defaults.DEFAULT_JOB_TIMEOUT
-    settings.DEFAULT_JOB_TIMEOUT = "foo"
-    assert conf.settings.DEFAULT_JOB_TIMEOUT == "foo"
+    assert settings.DEFAULT_TASK_TIMEOUT == defaults.DEFAULT_TASK_TIMEOUT
+    settings.DEFAULT_TASK_TIMEOUT = "foo"
+    assert conf.settings.DEFAULT_TASK_TIMEOUT == "foo"
 
 
 def test_mock_settings_after(settings):
-    assert settings.DEFAULT_JOB_TIMEOUT != "foo"
-    assert conf.settings.DEFAULT_JOB_TIMEOUT != "foo"
+    assert conf.settings.DEFAULT_TASK_TIMEOUT != "foo"
+    assert settings.DEFAULT_TASK_TIMEOUT != "foo"
 
 
 def test_RedisKey(settings):

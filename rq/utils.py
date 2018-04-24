@@ -14,6 +14,13 @@ def import_attribute(name):
     return getattr(module, attribute)
 
 
+def generate_callstring(func_name, args, kwargs):  # TODO: test
+    arg_list = [repr(arg) for arg in args]
+    arg_list += [f'{k}={v!r}' for k, v in kwargs.items()]
+    args = ', '.join(arg_list)
+    return f'{func_name}({args})'
+
+
 def utcnow():
     return datetime.datetime.utcnow()
 

@@ -67,8 +67,8 @@ class WorkerRegistry:
             local task_ids = {}
             for _, worker_id in ipairs(worker_ids) do
                 local task_key = task_key_prefix .. worker_id
-                local task_id = redis.call("LRANGE", task_key, 0, 0)[1]
-                if task_id ~= nil then
+                local task_id = redis.call("LINDEX", task_key, 0)
+                if task_id ~= false then
                     table.insert(task_ids, task_id)
                 end
             end

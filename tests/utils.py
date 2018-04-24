@@ -1,4 +1,4 @@
-from rq import Task, Queue, Worker
+from rq import Task, Queue, Worker, rq_task
 
 
 worker_sequence = 0
@@ -7,6 +7,11 @@ task_sequence = 0
 
 
 def stub():
+    pass
+
+
+@rq_task(reentrant=True)
+def reentrant_stub():
     pass
 
 
@@ -37,3 +42,31 @@ def QueueFactory():
 
 def id_list(lst):
     return [x.id for x in lst]
+
+
+class AnythingType(object):
+    def __eq__(self, other):
+        return True
+
+    def __ne__(self, other):
+        return False
+
+    def __repr__(self):
+        return 'Anything'
+
+
+Anything = AnythingType()
+
+
+class SomethingType(object):
+    def __eq__(self, other):
+        return other is not None
+
+    def __ne__(self, other):
+        return other is None
+
+    def __repr__(self):
+        return 'Something'
+
+
+Something = SomethingType()

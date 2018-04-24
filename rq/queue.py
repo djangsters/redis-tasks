@@ -1,4 +1,5 @@
 from .conf import RedisKey, connection
+from .exceptions import NoSuchTaskError
 from .registries import queue_registry
 from .task import Task
 from .utils import atomic_pipeline, decode_list
@@ -67,9 +68,17 @@ class Queue(object):
             pipeline.lpush(self.key, task.id)
         pipeline.lpush(self.unblock_key, task.id)
 
-    @atomic_pipeline
-    def remove(self, task, *, pipeline):
-        pipeline.lrem(self.key, 0, task.id)
+    def remove_and_delete(self, task):
+        def transaction(pipeline):
+            task_ids = decode_list(pipeline.lrange(self.key, 0, -1))
+            if task.id not in task_ids:
+                raise NoSuchTaskError()
+
+            pipeline.multi()
+            pipeline.lrem(self.key, 0, task.id)
+            Task.delete_many([task.id], pipeline=pipeline)
+
+        connection.transaction(transaction, self.key)
 
     def dequeue(self, worker):
         """Dequeue a task and set it as the current task for `worker`"""

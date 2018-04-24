@@ -6,6 +6,7 @@ import pytest
 
 from tests.utils import TaskFactory, WorkerFactory, QueueFactory, stub, id_list
 from rq.registries import queue_registry
+from rq.exceptions import NoSuchTaskError
 from rq import Queue, Task
 
 
@@ -26,15 +27,18 @@ def test_queue_basics(assert_atomic):
     assert q.count() == 1
 
 
-def test_remove(assert_atomic):
+def test_remove_and_delete(assert_atomic, connection):
     q = Queue()
     q.enqueue_call(stub)
     task = q.enqueue_call(stub)
     assert q.count() == 2
+    assert connection.exists(task.key)
     with assert_atomic():
-        q.remove(task)
+        q.remove_and_delete(task)
+    assert not connection.exists(task.key)
     assert q.count() == 1
-    q.remove(task)
+    with pytest.raises(NoSuchTaskError):
+        q.remove_and_delete(task)
     assert q.count() == 1
 
 
@@ -46,7 +50,7 @@ def test_get_tasks():
         q.push(task)
     assert q.get_task_ids() == id_list(tasks)
     assert id_list(q.get_tasks()) == id_list(tasks)
-    q.remove(tasks[1])
+    q.remove_and_delete(tasks[1])
     assert q.get_task_ids() == [tasks[0].id, tasks[2].id]
 
 

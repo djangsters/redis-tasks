@@ -34,3 +34,6 @@ class SentryMiddleware(TaskMiddleware):
         self.in_context = False
         self.client.transaction.pop(task.func_name)
         self.client.context.clear()
+
+
+# TODO: wrap worker?
