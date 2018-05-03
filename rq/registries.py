@@ -1,5 +1,5 @@
 import rq
-from .exceptions import NoSuchWorkerError
+from .exceptions import WorkerDoesNotExist
 from .utils import atomic_pipeline, decode_list
 from .conf import connection, settings, RedisKey
 
@@ -50,7 +50,7 @@ class WorkerRegistry:
         timestamp = connection.ftime()
         updated = connection.zadd(self.key, {worker.id: timestamp}, xx=True, ch=True)
         if not updated:
-            raise NoSuchWorkerError()
+            raise WorkerDoesNotExist()
 
     @atomic_pipeline
     def remove(self, worker, *, pipeline):

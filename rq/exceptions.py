@@ -8,7 +8,7 @@ class WorkerDied(TaskAborted):
     pass
 
 
-class NoSuchTaskError(Exception):
+class TaskDoesNotExist(Exception):
     pass
 
 
@@ -16,7 +16,7 @@ class InvalidOperation(Exception):
     pass
 
 
-class NoSuchWorkerError(Exception):
+class WorkerDoesNotExist(Exception):
     pass
 
 

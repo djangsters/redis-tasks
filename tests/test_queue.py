@@ -6,7 +6,7 @@ import pytest
 
 from tests.utils import TaskFactory, WorkerFactory, QueueFactory, stub, id_list
 from rq.registries import queue_registry
-from rq.exceptions import NoSuchTaskError
+from rq.exceptions import TaskDoesNotExist
 from rq.queue import Queue
 from rq.task import Task
 
@@ -38,7 +38,7 @@ def test_remove_and_delete(assert_atomic, connection):
         q.remove_and_delete(task)
     assert not connection.exists(task.key)
     assert q.count() == 1
-    with pytest.raises(NoSuchTaskError):
+    with pytest.raises(TaskDoesNotExist):
         q.remove_and_delete(task)
     assert q.count() == 1
 

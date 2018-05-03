@@ -1,7 +1,7 @@
 import pytest
 
 from rq import registries
-from rq.exceptions import NoSuchWorkerError
+from rq.exceptions import WorkerDoesNotExist
 from rq.conf import RedisKey
 from rq.task import TaskOutcome
 from tests.utils import TaskFactory, WorkerFactory, QueueFactory, stub
@@ -59,7 +59,7 @@ def test_worker_registry(connection, settings, mocker, assert_atomic):
     with assert_atomic():
         registry.remove(worker1)
     # worker is already dead
-    with pytest.raises(NoSuchWorkerError):
+    with pytest.raises(WorkerDoesNotExist):
         registry.heartbeat(worker1)
 
     with assert_atomic():

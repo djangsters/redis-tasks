@@ -1,7 +1,7 @@
 import logging
 
 from .conf import RedisKey, connection, settings
-from .exceptions import NoSuchWorkerError
+from .exceptions import WorkerDoesNotExist
 from .queue import Queue
 from .registries import worker_registry
 from .task import Task
@@ -52,7 +52,7 @@ class Worker:
             obj, task_id = pipeline.execute()
 
         if not obj:
-            raise NoSuchWorkerError(self.id)
+            raise WorkerDoesNotExist(self.id)
         assert len(task_id) < 2
         self.current_task_id = task_id[0].decode() if task_id else None
 

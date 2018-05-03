@@ -6,7 +6,7 @@ import pytest
 
 from rq.worker import Worker, WorkerState
 from rq.utils import decode_list
-from rq.exceptions import NoSuchWorkerError
+from rq.exceptions import WorkerDoesNotExist
 from tests.utils import QueueFactory, TaskFactory, stub, id_list
 from rq.task import TaskOutcome
 from rq.registries import worker_registry, failed_task_registry
@@ -201,7 +201,7 @@ def test_persistence(assert_atomic, connection, time_mocker):
         assert as_dict(Worker.fetch(worker.id)) == as_dict(worker)
 
     worker = Worker("nonexist", queues=[QueueFactory()])
-    with pytest.raises(NoSuchWorkerError):
+    with pytest.raises(WorkerDoesNotExist):
         worker.refresh()
-    with pytest.raises(NoSuchWorkerError):
+    with pytest.raises(WorkerDoesNotExist):
         Worker.fetch("nonexist")

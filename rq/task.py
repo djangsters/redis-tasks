@@ -7,7 +7,7 @@ from functools import partial
 
 import rq
 from .conf import RedisKey, connection, settings, task_middlewares
-from .exceptions import (InvalidOperation, NoSuchTaskError, TaskAborted,
+from .exceptions import (InvalidOperation, TaskDoesNotExist, TaskAborted,
                          WorkerDied, WorkerShutdown)
 from .registries import failed_task_registry, finished_task_registry
 from .utils import (atomic_pipeline, deserialize, enum, generate_callstring,
@@ -241,7 +241,7 @@ class Task:
         queue = rq.Queue(name=self.origin)
         try:
             queue.remove_and_delete(self)
-        except NoSuchTaskError:
+        except TaskDoesNotExist:
             raise InvalidOperation("Only enqueued jobs can be canceled")
         self.status = TaskStatus.CANCELED
 
@@ -274,7 +274,7 @@ class Task:
         key = self.key
         obj = {k.decode(): v for k, v in connection.hgetall(key).items()}
         if len(obj) == 0:
-            raise NoSuchTaskError('No such task: {0}'.format(key))
+            raise TaskDoesNotExist('No such task: {0}'.format(key))
 
         self.func_name = obj['func_name'].decode()
         self.args = deserialize(obj['args'])

@@ -1,5 +1,5 @@
 from .conf import RedisKey, connection
-from .exceptions import NoSuchTaskError
+from .exceptions import TaskDoesNotExist
 from .registries import queue_registry
 from .task import Task
 from .utils import atomic_pipeline, decode_list
@@ -72,7 +72,7 @@ class Queue(object):
         def transaction(pipeline):
             task_ids = decode_list(pipeline.lrange(self.key, 0, -1))
             if task.id not in task_ids:
-                raise NoSuchTaskError()
+                raise TaskDoesNotExist()
 
             pipeline.multi()
             pipeline.lrem(self.key, 0, task.id)

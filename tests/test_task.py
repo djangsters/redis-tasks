@@ -4,7 +4,7 @@ import uuid
 
 import pytest
 
-from rq.exceptions import InvalidOperation, NoSuchTaskError
+from rq.exceptions import InvalidOperation, TaskDoesNotExist
 from rq.registries import (failed_task_registry, finished_task_registry,
                            worker_registry)
 from rq.task import Task, TaskOutcome, TaskStatus, rq_task
@@ -267,9 +267,9 @@ def test_persistence(assert_atomic, connection):
     assert as_dict(Task.fetch(task.id)) == as_dict(task)
 
     task = Task(stub)
-    with pytest.raises(NoSuchTaskError):
+    with pytest.raises(TaskDoesNotExist):
         task.refresh()
-    with pytest.raises(NoSuchTaskError):
+    with pytest.raises(TaskDoesNotExist):
         Task.fetch('nonexist')
 
 
@@ -286,5 +286,5 @@ def test_init_save_fetch_delete(connection, assert_atomic):
 
     Task.delete_many([t.id])
     assert not connection.exists(t.key)
-    with pytest.raises(NoSuchTaskError):
+    with pytest.raises(TaskDoesNotExist):
         Task.fetch(t.id)
