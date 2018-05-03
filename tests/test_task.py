@@ -4,11 +4,11 @@ import uuid
 
 import pytest
 
-from rq.exceptions import InvalidOperation, TaskDoesNotExist
-from rq.registries import (failed_task_registry, finished_task_registry,
+from redis_tasks.exceptions import InvalidOperation, TaskDoesNotExist
+from redis_tasks.registries import (failed_task_registry, finished_task_registry,
                            worker_registry)
-from rq.task import Task, TaskOutcome, TaskStatus, rq_task
-from rq.utils import decode_list
+from redis_tasks.task import Task, TaskOutcome, TaskStatus, redis_task
+from redis_tasks.utils import decode_list
 from tests.utils import QueueFactory, WorkerFactory, reentrant_stub, stub
 
 
@@ -47,7 +47,7 @@ def test_init():
 
 
 def test_state_transistions(assert_atomic, connection, time_mocker):
-    time = time_mocker('rq.task.utcnow')
+    time = time_mocker('redis_tasks.task.utcnow')
     task = Task(reentrant_stub)
     q = QueueFactory()
     w = WorkerFactory()
@@ -184,7 +184,7 @@ def test_get_func():
     assert Task(stub)._get_func() == stub
 
 
-@rq_task(timeout=42)
+@redis_task(timeout=42)
 def my_timeout_func():
     pass
 

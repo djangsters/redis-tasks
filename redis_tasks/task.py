@@ -5,7 +5,7 @@ import uuid
 from contextlib import ExitStack
 from functools import partial
 
-import rq
+import redis_tasks
 from .conf import RedisKey, connection, settings, task_middlewares
 from .exceptions import (InvalidOperation, TaskDoesNotExist, TaskAborted,
                          WorkerDied, WorkerShutdown)
@@ -25,11 +25,11 @@ TaskStatus = enum(
 )
 
 
-def rq_task(*args, **kwargs):
+def redis_task(*args, **kwargs):
     def decorator(f):
         # Constructing TaskProperties instances initializes the settings.
         # We do not want to do this on import of user modules, so be lazy here.
-        f._rq_task_properties = LazyObject(lambda: TaskProperties(*args, **kwargs))
+        f._redis_task_properties = LazyObject(lambda: TaskProperties(*args, **kwargs))
         return f
 
     return decorator
@@ -83,7 +83,7 @@ class TaskMiddlewareOld:
     cleanup.
 
     The TaskAborted exception has a special meaning in this context. It is raised
-    by rq if the task did not fail itself, but was aborted for external reasons.
+    by redis_tasks if the task did not fail itself, but was aborted for external reasons.
     It can also be raised by any middleware. If it is passed through or raised
     by the outer-most middleware, reentrant tasks will be reenqueued at the
     front of the queue they came from."""
@@ -180,7 +180,7 @@ class Task:
     @atomic_pipeline
     def requeue(self, *, pipeline):
         assert self.status == TaskStatus.RUNNING
-        rq.Queue(self.origin).push(self, at_front=True, pipeline=pipeline)
+        redis_tasks.Queue(self.origin).push(self, at_front=True, pipeline=pipeline)
         self.status = TaskStatus.QUEUED
         self.aborted_runs.append((self.started_at, utcnow()))
         self.started_at = None
@@ -226,7 +226,7 @@ class Task:
     def handle_worker_death(self, *, pipeline):
         if self.status == TaskStatus.QUEUED:
             # The worker died while moving the task
-            rq.Queue(self.origin).push(self, at_front=True, pipeline=pipeline)
+            redis_tasks.Queue(self.origin).push(self, at_front=True, pipeline=pipeline)
         elif self.status == TaskStatus.RUNNING:
             try:
                 raise WorkerDied("Worker died")
@@ -238,7 +238,7 @@ class Task:
             raise Exception(f"Unexpected task status: {self.status}")
 
     def cancel(self):
-        queue = rq.Queue(name=self.origin)
+        queue = redis_tasks.Queue(name=self.origin)
         try:
             queue.remove_and_delete(self)
         except TaskDoesNotExist:
@@ -249,7 +249,7 @@ class Task:
         return import_attribute(self.func_name)
 
     def _get_properties(self):
-        return getattr(self._get_func(), '_rq_task_properties', TaskProperties())
+        return getattr(self._get_func(), '_redis_task_properties', TaskProperties())
 
     @property
     def is_reentrant(self):

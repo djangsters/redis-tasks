@@ -2,10 +2,10 @@ from django.apps import AppConfig
 from django.conf import settings as django_settings
 from .conf import settings
 
-SETTINGS_PREFIX = 'RQ_'
+SETTINGS_PREFIX = 'RT_'
 
 
-class RQDjango(AppConfig):
+class RTDjango(AppConfig):
     def __init__(self):
         settings.configure(DjangoSettingsProxy())
 

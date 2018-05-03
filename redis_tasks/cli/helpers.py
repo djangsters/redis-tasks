@@ -10,11 +10,11 @@ import click
 import redis
 from redis import StrictRedis
 from redis.sentinel import Sentinel
-from rq.defaults import (DEFAULT_CONNECTION_CLASS, DEFAULT_JOB_CLASS,
+from redis_tasks.defaults import (DEFAULT_CONNECTION_CLASS, DEFAULT_JOB_CLASS,
                          DEFAULT_QUEUE_CLASS, DEFAULT_WORKER_CLASS)
-from rq.logutils import setup_loghandlers
-from rq.utils import import_attribute
-from rq.worker import WorkerStatus
+from redis_tasks.logutils import setup_loghandlers
+from redis_tasks.utils import import_attribute
+from redis_tasks.worker import WorkerStatus
 
 red = partial(click.style, fg='red')
 green = partial(click.style, fg='green')

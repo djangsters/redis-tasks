@@ -3,11 +3,11 @@ from __future__ import (absolute_import, division, print_function,
                         unicode_literals)
 
 from click.testing import CliRunner
-from rq import get_failed_queue, Queue
-from rq.compat import is_python_version
-from rq.task import Task
-from rq.cli import main
-from rq.cli.helpers import read_config_file, CliConfig
+from redis_tasks import get_failed_queue, Queue
+from redis_tasks.compat import is_python_version
+from redis_tasks.task import Task
+from redis_tasks.cli import main
+from redis_tasks.cli.helpers import read_config_file, CliConfig
 import pytest
 
 from tests import RQTestCase
@@ -35,7 +35,7 @@ class TestRQCli(RQTestCase):
             print("Exception: {}".format(result.exception))
             self.assertEqual(result.exit_code, 0)
 
-    """Test rq_cli script"""
+    """Test redis_tasks_cli script"""
     def setUp(self):
         super(TestRQCli, self).setUp()
         db_num = self.testconn.connection_pool.connection_kwargs['db']
@@ -63,28 +63,28 @@ class TestRQCli(RQTestCase):
         self.assertEqual(result.exit_code, 1)
 
     def test_empty_nothing(self):
-        """rq empty -u <url>"""
+        """redis_tasks empty -u <url>"""
         runner = CliRunner()
         result = runner.invoke(main, ['empty', '-u', self.redis_url])
         self.assert_normal_execution(result)
         self.assertEqual(result.output.strip(), 'Nothing to do')
 
     def test_empty_failed(self):
-        """rq empty -u <url> failed"""
+        """redis_tasks empty -u <url> failed"""
         runner = CliRunner()
         result = runner.invoke(main, ['empty', '-u', self.redis_url, 'failed'])
         self.assert_normal_execution(result)
         self.assertEqual(result.output.strip(), '1 tasks removed from failed queue')
 
     def test_empty_all(self):
-        """rq empty -u <url> failed --all"""
+        """redis_tasks empty -u <url> failed --all"""
         runner = CliRunner()
         result = runner.invoke(main, ['empty', '-u', self.redis_url, '--all'])
         self.assert_normal_execution(result)
         self.assertEqual(result.output.strip(), '1 tasks removed from failed queue')
 
     def test_requeue(self):
-        """rq requeue -u <url> --all"""
+        """redis_tasks requeue -u <url> --all"""
         runner = CliRunner()
         result = runner.invoke(main, ['requeue', '-u', self.redis_url, '--all'])
         self.assert_normal_execution(result)
@@ -95,42 +95,42 @@ class TestRQCli(RQTestCase):
         self.assertEqual(result.output.strip(), 'Nothing to do')
 
     def test_info(self):
-        """rq info -u <url>"""
+        """redis_tasks info -u <url>"""
         runner = CliRunner()
         result = runner.invoke(main, ['info', '-u', self.redis_url])
         self.assert_normal_execution(result)
         self.assertIn('1 queues, 1 tasks total', result.output)
 
     def test_info_only_queues(self):
-        """rq info -u <url> --only-queues (-Q)"""
+        """redis_tasks info -u <url> --only-queues (-Q)"""
         runner = CliRunner()
         result = runner.invoke(main, ['info', '-u', self.redis_url, '--only-queues'])
         self.assert_normal_execution(result)
         self.assertIn('1 queues, 1 tasks total', result.output)
 
     def test_info_only_workers(self):
-        """rq info -u <url> --only-workers (-W)"""
+        """redis_tasks info -u <url> --only-workers (-W)"""
         runner = CliRunner()
         result = runner.invoke(main, ['info', '-u', self.redis_url, '--only-workers'])
         self.assert_normal_execution(result)
         self.assertIn('0 workers, 1 queues', result.output)
 
     def test_worker(self):
-        """rq worker -u <url> -b"""
+        """redis_tasks worker -u <url> -b"""
         runner = CliRunner()
         result = runner.invoke(main, ['worker', '-u', self.redis_url, '-b'])
         self.assert_normal_execution(result)
 
     def test_worker_pid(self):
-        """rq worker -u <url> /tmp/.."""
-        pid = self.tmpdir.join('rq.pid')
+        """redis_tasks worker -u <url> /tmp/.."""
+        pid = self.tmpdir.join('redis_tasks.pid')
         runner = CliRunner()
         result = runner.invoke(main, ['worker', '-u', self.redis_url, '-b', '--pid', str(pid)])
         self.assertTrue(len(pid.read()) > 0)
         self.assert_normal_execution(result)
 
     def test_exception_handlers(self):
-        """rq worker -u <url> -b --exception-handler <handler>"""
+        """redis_tasks worker -u <url> -b --exception-handler <handler>"""
         q = Queue()
         failed_q = get_failed_queue()
         failed_q.empty()

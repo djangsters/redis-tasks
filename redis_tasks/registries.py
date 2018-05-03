@@ -1,4 +1,4 @@
-import rq
+import redis_tasks
 from .exceptions import WorkerDoesNotExist
 from .utils import atomic_pipeline, decode_list
 from .conf import connection, settings, RedisKey
@@ -24,7 +24,7 @@ class ExpiringRegistry:
             self.key, 0, cutoff_time))
         if expired_task_ids:
             connection.zremrangebyscore(self.key, 0, cutoff_time)
-            rq.task.Task.delete_many(expired_task_ids)
+            redis_tasks.task.Task.delete_many(expired_task_ids)
 
 
 finished_task_registry = ExpiringRegistry('finished')
@@ -79,7 +79,7 @@ class WorkerRegistry:
 
     def handle_died_workers(self):
         # TODO: Test
-        from rq.worker import Worker
+        from redis_tasks.worker import Worker
         died_worker_ids = worker_registry.get_dead_ids(self)
         for worker_id in died_worker_ids:
             worker = Worker.fetch(worker_id)

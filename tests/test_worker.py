@@ -4,17 +4,17 @@ import datetime
 
 import pytest
 
-from rq.worker import Worker, WorkerState
-from rq.utils import decode_list
-from rq.exceptions import WorkerDoesNotExist
+from redis_tasks.worker import Worker, WorkerState
+from redis_tasks.utils import decode_list
+from redis_tasks.exceptions import WorkerDoesNotExist
 from tests.utils import QueueFactory, TaskFactory, stub, id_list
-from rq.task import TaskOutcome
-from rq.registries import worker_registry, failed_task_registry
+from redis_tasks.task import TaskOutcome
+from redis_tasks.registries import worker_registry, failed_task_registry
 
 
 def test_state_transitions(time_mocker, connection, assert_atomic):
     worker = Worker('myworker', queues=[QueueFactory(), QueueFactory()])
-    time = time_mocker('rq.worker.utcnow')
+    time = time_mocker('redis_tasks.worker.utcnow')
     queue = worker.queues[0]
 
     time.step()
@@ -60,7 +60,7 @@ def test_state_transitions(time_mocker, connection, assert_atomic):
 
 
 def test_died(time_mocker, connection, assert_atomic):
-    time = time_mocker('rq.worker.utcnow')
+    time = time_mocker('redis_tasks.worker.utcnow')
 
     # Die while idle
     worker = Worker('idleworker', queues=[QueueFactory()])
@@ -145,7 +145,7 @@ def test_heartbeat(mocker):
 
 
 def test_persistence(assert_atomic, connection, time_mocker):
-    time = time_mocker('rq.worker.utcnow')
+    time = time_mocker('redis_tasks.worker.utcnow')
     time.step()
     fields = {'description', 'state', 'queues', 'started_at', 'shutdown_at', 'current_task_id'}
 

@@ -1,1 +1,1 @@
-REDIS_PREFIX = 'rq_unittests'
+REDIS_PREFIX = 'redis_tasks_unittests'

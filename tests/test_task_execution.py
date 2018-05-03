@@ -3,8 +3,8 @@ from contextlib import contextmanager
 
 import pytest
 
-from rq.task import Task
-from rq.exceptions import WorkerShutdown, TaskAborted
+from redis_tasks.task import Task
+from redis_tasks.exceptions import WorkerShutdown, TaskAborted
 from tests.utils import stub, Something, mock_func_proxy
 
 
@@ -164,7 +164,7 @@ def test_middleware_order(mocker, SpyMiddleware):
     task = Task(stub)
     spies = [SpyMiddleware(), SpyMiddleware()]
     cmcheck = CMCheckMiddleware()
-    mocker.patch('rq.task.task_middlewares', new=[cmcheck, *spies])
+    mocker.patch('redis_tasks.task.task_middlewares', new=[cmcheck, *spies])
     outcome = task.execute(shutdown_cm=cmcheck)
     assert outcome.outcome == "success"
     assert SpyMiddleware.history == [
@@ -180,7 +180,7 @@ def test_middleware_order(mocker, SpyMiddleware):
 def test_middleware_raise_before(mocker, SpyMiddleware):
     task = Task(stub)
     spies = [SpyMiddleware(), SpyMiddleware(), SpyMiddleware()]
-    mocker.patch('rq.task.task_middlewares', new=spies)
+    mocker.patch('redis_tasks.task.task_middlewares', new=spies)
     spies[1].raise_before = ArithmeticError()
     outcome = task.execute()
     assert outcome.outcome == "failure"
@@ -197,7 +197,7 @@ def test_middleware_raise_before(mocker, SpyMiddleware):
 def test_middleware_raise_after(mocker, SpyMiddleware):
     task = Task(stub)
     spies = [SpyMiddleware(), SpyMiddleware()]
-    mocker.patch('rq.task.task_middlewares', new=spies)
+    mocker.patch('redis_tasks.task.task_middlewares', new=spies)
     spies[1].raise_after = ArithmeticError()
     outcome = task.execute()
     assert outcome.outcome == "failure"
@@ -214,7 +214,7 @@ def test_middleware_raise_after(mocker, SpyMiddleware):
 def test_outcome_middlewares(mocker, SpyMiddleware):
     task = Task(stub)
     spies = [SpyMiddleware() for i in range(2)]
-    mocker.patch('rq.task.task_middlewares', new=spies)
+    mocker.patch('redis_tasks.task.task_middlewares', new=spies)
     assert task._generate_outcome(None, None, None).outcome == 'success'
     assert SpyMiddleware.history == [
         (spies[1], 'process_outcome', (task, None, None, None)),
@@ -222,7 +222,7 @@ def test_outcome_middlewares(mocker, SpyMiddleware):
 
     SpyMiddleware.reset()
     spies = [SpyMiddleware() for i in range(3)]
-    mocker.patch('rq.task.task_middlewares', new=spies)
+    mocker.patch('redis_tasks.task.task_middlewares', new=spies)
     spies[2].outcome = True
     spies[1].outcome = ArithmeticError()
     spies[0].outcome = TaskAborted("fake abort")
@@ -240,7 +240,7 @@ def test_middleware_constructor_exception(SpyMiddleware, mocker):
     task = Task(stub)
     spies = [SpyMiddleware() for i in range(2)]
     mws = [spies[0], "nope", spies[1]]
-    mocker.patch('rq.task.task_middlewares', new=mws)
+    mocker.patch('redis_tasks.task.task_middlewares', new=mws)
     assert task.execute().outcome == 'failure'
     assert SpyMiddleware.history == [
         (spies[0], 'before', (task, )),

@@ -1,4 +1,4 @@
-from rq.worker_process import Maintenance
+from redis_tasks.worker_process import Maintenance
 import pytest
 import time
 

@@ -3,11 +3,11 @@ import logging
 import os
 import redis
 
-from rq import defaults
+from redis_tasks import defaults
 from .utils import LazyObject, import_attribute
 
 logger = logging.getLogger(__name__)
-ENVIRONMENT_VARIABLE = "RQ_SETTINGS_MODULE"
+ENVIRONMENT_VARIABLE = "RT_SETTINGS_MODULE"
 
 
 class Settings:
@@ -52,7 +52,7 @@ class Settings:
 settings = Settings()
 
 
-class RQRedis(redis.StrictRedis):
+class RTRedis(redis.StrictRedis):
     RESPONSE_CALLBACKS = redis.StrictRedis.RESPONSE_CALLBACKS
 
     def __init__(self, *args, **kwargs):
@@ -60,7 +60,7 @@ class RQRedis(redis.StrictRedis):
         self.set_response_callback('EXISTS', int)
 
     def pipeline(self, transaction=True, shard_hint=None):
-        return RQPipeline(self.connection_pool, self.response_callbacks, transaction, shard_hint)
+        return RTPipeline(self.connection_pool, self.response_callbacks, transaction, shard_hint)
 
     def exists(self, *keys):
         return self.execute_command('EXISTS', *keys)
@@ -86,13 +86,13 @@ class RQRedis(redis.StrictRedis):
         return self.execute_command('ZADD', name, *pieces)
 
 
-class RQPipeline(redis.client.BasePipeline, RQRedis):
+class RTPipeline(redis.client.BasePipeline, RTRedis):
     pass
 
 
 @LazyObject
 def connection():
-    return RQRedis.from_url(settings.REDIS_URL)
+    return RTRedis.from_url(settings.REDIS_URL)
 
 
 @LazyObject

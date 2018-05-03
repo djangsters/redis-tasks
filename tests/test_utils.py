@@ -1,7 +1,7 @@
 import pytest
 
-from rq import utils
-from rq import exceptions
+from redis_tasks import utils
+from redis_tasks import exceptions
 
 
 def test_import_attribute():
@@ -22,7 +22,7 @@ def test_serialization():
 
 
 def test_atomic_pipeline(mocker):
-    connection = mocker.patch('rq.conf.connection')
+    connection = mocker.patch('redis_tasks.conf.connection')
 
     def f1(pipeline):
         assert pipeline == mock_pipe

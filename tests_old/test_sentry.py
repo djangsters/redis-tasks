@@ -2,8 +2,8 @@
 from __future__ import (absolute_import, division, print_function,
                         unicode_literals)
 
-from rq import get_failed_queue, Queue, Worker
-from rq.contrib.sentry import register_sentry
+from redis_tasks import get_failed_queue, Queue, Worker
+from redis_tasks.contrib.sentry import register_sentry
 
 from tests import RQTestCase
 

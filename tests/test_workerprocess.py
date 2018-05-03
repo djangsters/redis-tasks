@@ -5,11 +5,11 @@ import os
 
 import pytest
 
-from rq.task import Task, TaskOutcome, TaskStatus
-from rq.utils import decode_list
-from rq.exceptions import WorkerShutdown
-from rq.worker import Worker, WorkerState
-from rq.worker_process import (
+from redis_tasks.task import Task, TaskOutcome, TaskStatus
+from redis_tasks.utils import decode_list
+from redis_tasks.exceptions import WorkerShutdown
+from redis_tasks.worker import Worker, WorkerState
+from redis_tasks.worker_process import (
     ShutdownRequested, WorkerProcess, WorkHorse, generate_worker_description)
 from tests.utils import (
     QueueFactory, TaskFactory, id_list, mock_func_proxy, stub)
@@ -56,7 +56,7 @@ def test_queue_iter(connection, mocker):
 
     await_counter = 0
     task3 = task4 = task5 = None
-    mocker.patch('rq.queue.Queue.await_multi', new=my_await_multi)
+    mocker.patch('redis_tasks.queue.Queue.await_multi', new=my_await_multi)
     assert next(qi).id == task3.id
     assert wp.worker.current_task_id == task3.id
     assert await_counter == 2
@@ -81,13 +81,13 @@ def test_queue_iter(connection, mocker):
 
 def test_run(settings, mocker):
     tasks = [mocker.sentinel.t1, mocker.sentinel.t2, mocker.sentinel.t3]
-    mocker.patch('rq.worker_process.WorkerProcess.queue_iter', return_value=tasks)
+    mocker.patch('redis_tasks.worker_process.WorkerProcess.queue_iter', return_value=tasks)
 
     def my_process(task):
         assert wp.worker.state == WorkerState.IDLE
 
-    process = mocker.patch('rq.worker_process.WorkerProcess.process_task', side_effect=my_process)
-    maintenance = mocker.patch('rq.worker_process.Maintenance')
+    process = mocker.patch('redis_tasks.worker_process.WorkerProcess.process_task', side_effect=my_process)
+    maintenance = mocker.patch('redis_tasks.worker_process.Maintenance')
     wp = WorkerProcess([QueueFactory()])
     assert wp.run(True) == 3
     assert process.call_args_list == [((x, ),) for x in tasks]
@@ -116,14 +116,14 @@ def test_heartbeats(mocker):
     def send_heartbeat(*args, **kwargs):
         nonlocal heartbeat_sent
         heartbeat_sent = True
-    mocker.patch('rq.registries.WorkerRegistry.heartbeat', side_effect=send_heartbeat)
+    mocker.patch('redis_tasks.registries.WorkerRegistry.heartbeat', side_effect=send_heartbeat)
 
     def consume_heartbeat(*args, **kwargs):
         nonlocal heartbeat_sent
         assert heartbeat_sent is True
         heartbeat_sent = False
         return mocker.DEFAULT
-    maintenance = mocker.patch('rq.worker_process.Maintenance.run_if_neccessary',
+    maintenance = mocker.patch('redis_tasks.worker_process.Maintenance.run_if_neccessary',
                                side_effect=consume_heartbeat)
 
     def my_await(*args):
@@ -136,7 +136,7 @@ def test_heartbeats(mocker):
         consume_heartbeat()
         yield queue
         raise ShutdownRequested()
-    mock_await = mocker.patch('rq.queue.Queue.await_multi', side_effect=my_await())
+    mock_await = mocker.patch('redis_tasks.queue.Queue.await_multi', side_effect=my_await())
 
     mocker.patch.object(WorkHorse, 'start', new=WorkHorse.run)
     horse_alive = mocker.patch.object(WorkHorse, 'is_alive', return_value=True)
@@ -269,7 +269,7 @@ def test_execute_task(mocker, settings, time_mocker):
 
     mock_join.side_effect = timeout_join()
     settings.DEFAULT_TASK_TIMEOUT = 1
-    time = time_mocker("rq.worker_process.utcnow")
+    time = time_mocker("redis_tasks.worker_process.utcnow")
     time.step()
     fake_signal = mocker.patch.object(WorkHorse, 'send_signal', side_effect=take_kill)
     outcome = wp.execute_task(task)
@@ -279,7 +279,7 @@ def test_execute_task(mocker, settings, time_mocker):
 
 
 def taskwait():
-    with multiprocessing.connection.Client(os.environ['RQ_TEST_SOCKET']) as conn:
+    with multiprocessing.connection.Client(os.environ['RT_TEST_SOCKET']) as conn:
         conn.send("A")
         try:
             time.sleep(10)
@@ -292,7 +292,7 @@ def taskwait():
 @pytest.fixture()
 def suprocess_socket(tmpdir):
     socket_file = str(tmpdir.join('socket'))
-    os.environ['RQ_TEST_SOCKET'] = socket_file
+    os.environ['RT_TEST_SOCKET'] = socket_file
     with multiprocessing.connection.Listener(socket_file) as listener:
         yield listener
 

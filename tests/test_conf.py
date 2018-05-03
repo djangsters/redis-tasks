@@ -1,5 +1,5 @@
-from rq import conf
-from rq import defaults
+from redis_tasks import conf
+from redis_tasks import defaults
 import os
 from types import SimpleNamespace
 

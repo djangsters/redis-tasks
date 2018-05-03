@@ -12,14 +12,14 @@ import sys
 import click
 from redis.exceptions import ConnectionError
 
-from rq import Connection, __version__ as version
-from rq.cli.helpers import (read_config_file, refresh,
+from redis_tasks import Connection, __version__ as version
+from redis_tasks.cli.helpers import (read_config_file, refresh,
                             setup_loghandlers_from_args,
                             show_both, show_queues, show_workers, CliConfig)
-from rq.contrib.legacy import cleanup_ghosts
-from rq.defaults import (DEFAULT_CONNECTION_CLASS, DEFAULT_JOB_CLASS,
+from redis_tasks.contrib.legacy import cleanup_ghosts
+from redis_tasks.defaults import (DEFAULT_CONNECTION_CLASS, DEFAULT_JOB_CLASS,
                          DEFAULT_QUEUE_CLASS, DEFAULT_WORKER_CLASS)
-from rq.utils import import_attribute
+from redis_tasks.utils import import_attribute
 
 
 # Disable the warning that Click displays (as of Click version 5.0) when users
@@ -189,7 +189,7 @@ def worker(cli_config, burst, name, path, results_ttl,
         if sentry_dsn:
             from raven import Client
             from raven.transport.http import HTTPTransport
-            from rq.contrib.sentry import register_sentry
+            from redis_tasks.contrib.sentry import register_sentry
             client = Client(sentry_dsn, transport=HTTPTransport)
             register_sentry(client, worker)
 

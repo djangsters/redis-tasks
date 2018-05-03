@@ -5,9 +5,9 @@ import socket
 
 import pytest
 
-from rq.exceptions import WorkerShutdown
-from rq.task import Task, TaskOutcome
-from rq.worker_process import PostponeShutdown, WorkHorse
+from redis_tasks.exceptions import WorkerShutdown
+from redis_tasks.task import Task, TaskOutcome
+from redis_tasks.worker_process import PostponeShutdown, WorkHorse
 from tests.utils import TaskFactory, stub
 
 
@@ -78,7 +78,7 @@ def test_process():
 
 
 def horsetaskwait():
-    with multiprocessing.connection.Client(os.environ['RQ_TEST_SOCKET']) as conn:
+    with multiprocessing.connection.Client(os.environ['RT_TEST_SOCKET']) as conn:
         conn.send("A")
         assert conn.recv() == "B"
         conn.send("C")
@@ -88,7 +88,7 @@ def horsetaskwait():
 @pytest.fixture()
 def suprocess_socket(tmpdir):
     socket_file = str(tmpdir.join('socket'))
-    os.environ['RQ_TEST_SOCKET'] = socket_file
+    os.environ['RT_TEST_SOCKET'] = socket_file
     with multiprocessing.connection.Listener(socket_file) as listener:
         yield listener
 

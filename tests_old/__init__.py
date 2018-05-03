@@ -5,8 +5,8 @@ from __future__ import (absolute_import, division, print_function,
 import logging
 
 from redis import StrictRedis
-from rq import pop_connection, push_connection
-from rq.compat import is_python_version
+from redis_tasks import pop_connection, push_connection
+from redis_tasks.compat import is_python_version
 
 if is_python_version((2, 7), (3, 2)):
     import unittest

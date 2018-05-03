@@ -2,3 +2,4 @@ redis
 click
 pytest
 pytest-mock
+pip-tools

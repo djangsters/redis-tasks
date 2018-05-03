@@ -10,7 +10,7 @@ import multiprocessing
 import pytest
 import redis
 
-from rq import conf
+from redis_tasks import conf
 
 os.environ[conf.ENVIRONMENT_VARIABLE] = 'tests.app.settings'
 
@@ -25,7 +25,7 @@ class ModifiableSettings:
 
 @pytest.fixture()
 def settings():
-    from rq import conf
+    from redis_tasks import conf
     # ensure the settings are initialized
     conf.settings.DEFAULT_TASK_TIMEOUT
     original_dict = conf.settings.__dict__
@@ -102,7 +102,7 @@ def assert_atomic(mocker):
 
 class TimeMocker:
     def __init__(self, mocker, target):
-        from rq.utils import utcnow
+        from redis_tasks.utils import utcnow
         self.seq = 0
         self.mocker = mocker
         self.target = target

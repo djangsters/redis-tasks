@@ -2,9 +2,9 @@ import os
 import socket
 from types import SimpleNamespace
 
-from rq.queue import Queue
-from rq.task import Task, rq_task
-from rq.worker import Worker
+from redis_tasks.queue import Queue
+from redis_tasks.task import Task, redis_task
+from redis_tasks.worker import Worker
 
 worker_sequence = 0
 queue_sequence = 0
@@ -22,7 +22,7 @@ def stub():
     pass
 
 
-@rq_task(reentrant=True)
+@redis_task(reentrant=True)
 def reentrant_stub():
     pass
 

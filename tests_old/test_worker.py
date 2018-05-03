@@ -23,13 +23,13 @@ from tests.fixtures import (create_file, create_file_after_timeout,
                             modify_self, modify_self_and_error)
 from tests.helpers import strip_microseconds
 
-from rq import (get_failed_queue, Queue, SimpleWorker, Worker,
+from redis_tasks import (get_failed_queue, Queue, SimpleWorker, Worker,
                 get_current_connection)
-from rq.compat import as_text, PY2
-from rq.task import Task, TaskStatus
-from rq.registry import StartedTaskRegistry
-from rq.utils import utcnow
-from rq.worker import HerokuWorker, WorkerStatus
+from redis_tasks.compat import as_text, PY2
+from redis_tasks.task import Task, TaskStatus
+from redis_tasks.registry import StartedTaskRegistry
+from redis_tasks.utils import utcnow
+from redis_tasks.worker import HerokuWorker, WorkerStatus
 
 
 class CustomTask(Task):
@@ -91,8 +91,8 @@ class TestWorker(RQTestCase):
 
     def test_work_and_quit(self):
         """Worker processes work, then quits."""
-        fooq, barq = Queue('foo'), Queue('bar')
-        w = Worker([fooq, barq])
+        fooq, baredis_tasks = Queue('foo'), Queue('bar')
+        w = Worker([fooq, baredis_tasks])
         self.assertEqual(
             w.work(burst=True), False,
             'Did not expect any work on the queue.'
@@ -260,7 +260,7 @@ class TestWorker(RQTestCase):
     def test_cancelled_tasks_arent_executed(self):  # noqa
         """Cancelling tasks."""
 
-        SENTINEL_FILE = '/tmp/rq-tests.txt'
+        SENTINEL_FILE = '/tmp/redis_tasks-tests.txt'
 
         try:
             # Remove the sentinel if it is leftover from a previous test run
@@ -285,7 +285,7 @@ class TestWorker(RQTestCase):
     @slow  # noqa
     def test_timeouts(self):
         """Worker kills tasks after timeout."""
-        sentinel_file = '/tmp/.rq_sentinel'
+        sentinel_file = '/tmp/.redis_tasks_sentinel'
 
         q = Queue()
         w = Worker([q])
@@ -410,8 +410,8 @@ class TestWorker(RQTestCase):
     def test_work_via_simpleworker(self):
         """Worker processes work, with forking disabled,
         then returns."""
-        fooq, barq = Queue('foo'), Queue('bar')
-        w = SimpleWorker([fooq, barq])
+        fooq, baredis_tasks = Queue('foo'), Queue('bar')
+        w = SimpleWorker([fooq, baredis_tasks])
         self.assertEqual(w.work(burst=True), False,
                          'Did not expect any work on the queue.')
 
@@ -628,7 +628,7 @@ class WorkerShutdownTestCase(TimeoutTestCase, RQTestCase):
         fooq = Queue('foo')
         w = Worker(fooq)
 
-        sentinel_file = '/tmp/.rq_sentinel_warm'
+        sentinel_file = '/tmp/.redis_tasks_sentinel_warm'
         fooq.enqueue(create_file_after_timeout, sentinel_file, 2)
         self.assertFalse(w._stop_requested)
         p = Process(target=kill_worker, args=(os.getpid(), False))
@@ -649,7 +649,7 @@ class WorkerShutdownTestCase(TimeoutTestCase, RQTestCase):
         """worker with an ongoing task receiving double SIGTERM signal and shutting down immediately"""
         fooq = Queue('foo')
         w = Worker(fooq)
-        sentinel_file = '/tmp/.rq_sentinel_cold'
+        sentinel_file = '/tmp/.redis_tasks_sentinel_cold'
         fooq.enqueue(create_file_after_timeout, sentinel_file, 2)
         self.assertFalse(w._stop_requested)
         p = Process(target=kill_worker, args=(os.getpid(), True))
@@ -675,7 +675,7 @@ class WorkerShutdownTestCase(TimeoutTestCase, RQTestCase):
         self.assertEqual(failed_q.count, 0)
         self.assertEqual(fooq.count, 0)
         w = Worker(fooq)
-        sentinel_file = '/tmp/.rq_sentinel_work_horse_death'
+        sentinel_file = '/tmp/.redis_tasks_sentinel_work_horse_death'
         if os.path.exists(sentinel_file):
             os.remove(sentinel_file)
         fooq.enqueue(create_file_after_timeout, sentinel_file, 100)
@@ -704,13 +704,13 @@ class TestWorkerSubprocess(RQTestCase):
 
     def test_run_empty_queue(self):
         """Run the worker in its own process with an empty queue"""
-        subprocess.check_call(['rqworker', '-u', self.redis_url, '-b'])
+        subprocess.check_call(['redis_tasksworker', '-u', self.redis_url, '-b'])
 
     def test_run_access_self(self):
         """Schedule a task, then run the worker as subprocess"""
         q = Queue()
         q.enqueue(access_self)
-        subprocess.check_call(['rqworker', '-u', self.redis_url, '-b'])
+        subprocess.check_call(['redis_tasksworker', '-u', self.redis_url, '-b'])
         assert get_failed_queue().count == 0
         assert q.count == 0
 
@@ -722,7 +722,7 @@ class TestWorkerSubprocess(RQTestCase):
             return
         q = Queue()
         q.enqueue(schedule_access_self)
-        subprocess.check_call(['rqworker', '-u', self.redis_url, '-b'])
+        subprocess.check_call(['redis_tasksworker', '-u', self.redis_url, '-b'])
         assert get_failed_queue().count == 0
         assert q.count == 0
 
@@ -731,7 +731,7 @@ class TestWorkerSubprocess(RQTestCase):
 class HerokuWorkerShutdownTestCase(TimeoutTestCase, RQTestCase):
     def setUp(self):
         super(HerokuWorkerShutdownTestCase, self).setUp()
-        self.sandbox = '/tmp/rq_shutdown/'
+        self.sandbox = '/tmp/redis_tasks_shutdown/'
         os.makedirs(self.sandbox)
 
     def tearDown(self):

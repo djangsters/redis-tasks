@@ -10,10 +10,10 @@ import os
 import time
 import sys
 
-from rq import Connection, get_current_task, get_current_connection, Queue
-from rq.decorators import task
-from rq.compat import PY2
-from rq.worker import HerokuWorker
+from redis_tasks import Connection, get_current_task, get_current_connection, Queue
+from redis_tasks.decorators import task
+from redis_tasks.compat import PY2
+from redis_tasks.worker import HerokuWorker
 
 
 def say_pid():

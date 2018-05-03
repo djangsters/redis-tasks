@@ -1,9 +1,9 @@
 import pytest
 
-from rq import registries
-from rq.exceptions import WorkerDoesNotExist
-from rq.conf import RedisKey
-from rq.task import TaskOutcome
+from redis_tasks import registries
+from redis_tasks.exceptions import WorkerDoesNotExist
+from redis_tasks.conf import RedisKey
+from redis_tasks.task import TaskOutcome
 from tests.utils import TaskFactory, WorkerFactory, QueueFactory, stub
 
 
@@ -12,11 +12,11 @@ def test_expiring_registry(connection, settings, mocker, assert_atomic):
     task1 = TaskFactory()
     task2 = TaskFactory()
     settings.EXPIRING_REGISTRIES_TTL = 10
-    delete_tasks = mocker.patch('rq.task.Task.delete_many')
+    delete_tasks = mocker.patch('redis_tasks.task.Task.delete_many')
 
     assert registry.key == RedisKey('testexpire_tasks')
 
-    timestamp = mocker.patch('rq.conf.RQRedis.time')
+    timestamp = mocker.patch('redis_tasks.conf.RTRedis.time')
     timestamp.return_value = (1000, 0)
     with assert_atomic():
         registry.add(task1)
@@ -38,7 +38,7 @@ def test_worker_registry(connection, settings, mocker, assert_atomic):
     worker2 = WorkerFactory()
     settings.WORKER_HEARTBEAT_TIMEOUT = 100
 
-    timestamp = mocker.patch('rq.conf.RQRedis.time')
+    timestamp = mocker.patch('redis_tasks.conf.RTRedis.time')
     timestamp.return_value = (1000, 0)
     with assert_atomic():
         registry.add(worker1)

@@ -86,7 +86,7 @@ class WorkerProcess:
         Returns the number of tasks that were processed in burst mode"""
         self.install_signal_handlers()
         self.worker.startup()
-        logger.info("RQ worker {}({!r}) started".format(
+        logger.info("worker {}({!r}) started".format(
             self.worker.description, self.worker.id))
 
         if settings.WORKER_PRELOAD_FUNCTION:
