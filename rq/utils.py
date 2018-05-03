@@ -22,15 +22,17 @@ def generate_callstring(func_name, args, kwargs):  # TODO: test
 
 
 def utcnow():
-    return datetime.datetime.utcnow()
+    return datetime.datetime.now(datetime.timezone.utc)
 
 
 def utcformat(dt):
+    assert dt.tzinfo and dt.tzinfo.utcoffset(dt).total_seconds() == 0
     return dt.strftime('%Y-%m-%dT%H:%M:%SZ')
 
 
 def utcparse(string):
-    return datetime.datetime.strptime(string, '%Y-%m-%dT%H:%M:%SZ')
+    parsed = datetime.datetime.strptime(string, '%Y-%m-%dT%H:%M:%SZ')
+    return parsed.replace(tzinfo=datetime.timezone.utc)
 
 
 def enum(name, *sequential, **named):

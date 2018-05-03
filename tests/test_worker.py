@@ -149,21 +149,22 @@ def test_persistence(assert_atomic, connection, time_mocker):
     time.step()
     fields = {'description', 'state', 'queues', 'started_at', 'shutdown_at', 'current_task_id'}
 
-    def randomize_data(task):
+    def randomize_data(worker):
         string_fields = ['description', 'state', 'current_task_id']
         date_fields = ['started_at', 'shutdown_at']
         for f in string_fields:
-            setattr(task, f, str(uuid.uuid4()))
+            setattr(worker, f, str(uuid.uuid4()))
         for f in date_fields:
-            setattr(task, f, datetime.datetime(random.randint(1000, 9999), 1, 1))
+            setattr(worker, f, datetime.datetime(
+                random.randint(1000, 9999), 1, 1, tzinfo=datetime.timezone.utc))
 
-        task.args = tuple(str(uuid.uuid4()) for i in range(4))
-        task.kwargs = {str(uuid.uuid4()): ["d"]}
-        task.meta = {"x": [str(uuid.uuid4())]}
-        task.aborted_runs = ["foo", "bar", str(uuid.uuid4())]
+        worker.args = tuple(str(uuid.uuid4()) for i in range(4))
+        worker.kwargs = {str(uuid.uuid4()): ["d"]}
+        worker.meta = {"x": [str(uuid.uuid4())]}
+        worker.aborted_runs = ["foo", "bar", str(uuid.uuid4())]
 
-    def as_dict(task):
-        return {f: getattr(task, f) if f != 'queues' else [q.name for q in task.queues]
+    def as_dict(worker):
+        return {f: getattr(worker, f) if f != 'queues' else [q.name for q in worker.queues]
                 for f in fields}
 
     worker = Worker("testworker", queues=[QueueFactory()])

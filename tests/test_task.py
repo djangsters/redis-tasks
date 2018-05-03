@@ -222,7 +222,8 @@ def test_persistence(assert_atomic, connection):
         for f in string_fields:
             setattr(task, f, str(uuid.uuid4()))
         for f in date_fields:
-            setattr(task, f, datetime.datetime(random.randint(1000, 9999), 1, 1))
+            setattr(task, f, datetime.datetime(
+                random.randint(1000, 9999), 1, 1, tzinfo=datetime.timezone.utc))
 
         task.args = tuple(str(uuid.uuid4()) for i in range(4))
         task.kwargs = {str(uuid.uuid4()): ["d"]}
