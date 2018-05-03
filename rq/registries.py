@@ -31,9 +31,10 @@ finished_task_registry = ExpiringRegistry('finished')
 failed_task_registry = ExpiringRegistry('failed')
 
 
-def expire_registries():
+def registry_maintenance():
     finished_task_registry.expire()
     failed_task_registry.expire()
+    worker_registry.handle_dead_workers()
 
 
 class WorkerRegistry:
@@ -75,6 +76,14 @@ class WorkerRegistry:
             return task_ids
         """)
         return decode_list(lua(keys=[self.key, task_key_prefix]))
+
+    def handle_died_workers(self):
+        # TODO: Test
+        from rq.worker import Worker
+        died_worker_ids = worker_registry.get_dead_ids(self)
+        for worker_id in died_worker_ids:
+            worker = Worker.fetch(worker_id)
+            worker.died()
 
     def get_dead_ids(self):
         oldest_valid = connection.ftime() - settings.WORKER_HEARTBEAT_TIMEOUT

@@ -2,6 +2,7 @@ import os
 import copy
 import socket
 import signal
+import datetime
 from contextlib import contextmanager
 from unittest import mock
 import multiprocessing
@@ -101,15 +102,15 @@ def assert_atomic(mocker):
 
 class TimeMocker:
     def __init__(self, mocker, target):
+        from rq.utils import utcnow
         self.seq = 0
         self.mocker = mocker
         self.target = target
-        self.now = None
+        self.now = utcnow().replace(microsecond=0)
 
-    def step(self):
-        from rq.utils import utcnow
+    def step(self, seconds=1):
         self.seq += 1
-        self.now = utcnow().replace(second=self.seq, microsecond=0)
+        self.now += datetime.timedelta(seconds=seconds)
         self.mocker.patch(self.target, return_value=self.now)
         return self.now
 

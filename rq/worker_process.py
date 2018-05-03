@@ -14,9 +14,9 @@ from datetime import timedelta
 from .conf import RedisKey, connection, settings, task_middlewares
 from .exceptions import WorkerShutdown
 from .queue import Queue
-from .registries import expire_registries, worker_registry
+from .registries import registry_maintenance
 from .task import TaskOutcome
-from .utils import import_attribute, utcnow, utcparse
+from .utils import import_attribute, utcnow, utcparse, utcformat
 from .worker import Worker
 
 logger = logging.getLogger(__name__)
@@ -227,29 +227,23 @@ class Maintenance:
         self.key = RedisKey('last_maintenance')
 
     def run_if_neccessary(self):
-        if (not self.last_run_at or
+        if (self.last_run_at and
                 (utcnow() - self.last_run_at) < timedelta(seconds=settings.MAINTENANCE_FREQ)):
             return
         # The cleanup tasks are not safe to run in paralell, so use this lock
         # to ensure that only one worker runs them.
-        if connection.setnx(self.key, utcnow()):
+        if connection.setnx(self.key, utcformat(utcnow())):
             connection.expire(self.key, settings.MAINTENANCE_FREQ)
             self.run()
 
         redis_value = connection.get(self.key)
         # might have expired between a failed SETNX and the GET
         if redis_value:
-            self.last_run_at = utcparse(redis_value)
-
-    def handle_died_workers(self):
-        died_worker_ids = worker_registry.get_dead_ids(self)
-        for worker_id in died_worker_ids:
-            worker = Worker.fetch(worker_id)
-            worker.died()
+            # Use min to limit impact of workers with incorrect time
+            self.last_run_at = min(utcnow(), utcparse(redis_value.decode()))
 
     def run(self):
-        self.handle_died_workers()
-        expire_registries()
+        registry_maintenance()
 
 
 class WorkHorse(multiprocessing.Process):
