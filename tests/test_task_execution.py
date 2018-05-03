@@ -117,11 +117,12 @@ class CMCheckMiddleware:
     def __exit__(self, *args):
         self.in_cm = False
 
-    def before(self, task):
+    def run_task(self, task, run, args, kwargs):
         self.failed |= self.in_cm
-
-    def after(self, task):
-        self.failed |= self.in_cm
+        try:
+            run(*args, **kwargs)
+        finally:
+            self.failed |= self.in_cm
 
     def process_outcome(self, task, *exc_info):
         self.failed |= self.in_cm
@@ -137,15 +138,16 @@ class _SpyMiddleware:
     def reset(cls):
         cls.history = []
 
-    def before(self, *args):
-        self.history.append((self, 'before', args))
+    def run_task(self, task, run, args, kwargs):
+        self.history.append((self, 'before', (task, *args)))
         if getattr(self, 'raise_before', None):
             raise self.raise_before
-
-    def after(self, *args):
-        self.history.append((self, 'after', args))
-        if getattr(self, 'raise_after', None):
-            raise self.raise_after
+        try:
+            run(*args)
+        finally:
+            self.history.append((self, 'after', (task, *args)))
+            if getattr(self, 'raise_after', None):
+                raise self.raise_after
 
     def process_outcome(self, *args):
         self.history.append((self, 'process_outcome', args))
@@ -175,10 +177,10 @@ def test_middleware_order(mocker, SpyMiddleware):
     assert SpyMiddleware.history == [
         (spies[0], 'before', (task, )),
         (spies[1], 'before', (task, )),
-        (spies[1], 'process_outcome', (task, None, None, None)),
-        (spies[0], 'process_outcome', (task, None, None, None)),
         (spies[1], 'after', (task, )),
-        (spies[0], 'after', (task, ))]
+        (spies[0], 'after', (task, )),
+        (spies[1], 'process_outcome', (task, None, None, None)),
+        (spies[0], 'process_outcome', (task, None, None, None))]
     assert not cmcheck.failed
 
 
@@ -193,11 +195,10 @@ def test_middleware_raise_before(mocker, SpyMiddleware):
     assert SpyMiddleware.history == [
         (spies[0], 'before', (task, )),
         (spies[1], 'before', (task, )),
+        (spies[0], 'after', (task, )),
         (spies[2], 'process_outcome', (task, ArithmeticError, Something, Something)),
         (spies[1], 'process_outcome', (task, ArithmeticError, Something, Something)),
-        (spies[0], 'process_outcome', (task, ArithmeticError, Something, Something)),
-        (spies[1], 'after', (task, )),
-        (spies[0], 'after', (task, ))]
+        (spies[0], 'process_outcome', (task, ArithmeticError, Something, Something))]
 
 
 def test_middleware_raise_after(mocker, SpyMiddleware):
@@ -206,14 +207,15 @@ def test_middleware_raise_after(mocker, SpyMiddleware):
     mocker.patch('rq.task.task_middlewares', new=spies)
     spies[1].raise_after = ArithmeticError()
     outcome = task.execute()
-    assert outcome.outcome == "success"
+    assert outcome.outcome == "failure"
+    assert 'ArithmeticError' in outcome.message
     assert SpyMiddleware.history == [
         (spies[0], 'before', (task, )),
         (spies[1], 'before', (task, )),
-        (spies[1], 'process_outcome', (task, None, None, None)),
-        (spies[0], 'process_outcome', (task, None, None, None)),
         (spies[1], 'after', (task, )),
-        (spies[0], 'after', (task, ))]
+        (spies[0], 'after', (task, )),
+        (spies[1], 'process_outcome', (task, ArithmeticError, Something, Something)),
+        (spies[0], 'process_outcome', (task, ArithmeticError, Something, Something))]
 
 
 def test_outcome_middlewares(mocker, SpyMiddleware):
@@ -249,7 +251,7 @@ def test_middleware_constructor_exception(SpyMiddleware, mocker):
     assert task.execute().outcome == 'failure'
     assert SpyMiddleware.history == [
         (spies[0], 'before', (task, )),
+        (spies[0], 'after', (task, )),
         (spies[1], 'process_outcome', (task, TypeError, Something, Something)),
-        (spies[0], 'process_outcome', (task, TypeError, Something, Something)),
-        (spies[0], 'after', (task, ))]
+        (spies[0], 'process_outcome', (task, TypeError, Something, Something))]
     SpyMiddleware.reset()

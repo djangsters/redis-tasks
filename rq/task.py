@@ -52,6 +52,14 @@ class TaskOutcome:
 
 
 class TaskMiddleware:
+    def run_task(task, run, args, kwargs):
+        return run(*args, **kwargs)
+
+    def process_outcome(task, outcome):
+        pass
+
+
+class TaskMiddlewareOld:
     """Base class for a task execution middleware.
 
     Before task execution, the `before()` methods are called in the order the
@@ -317,29 +325,25 @@ class Task:
         Returns a TaskOutcome."""
         exc_info = (None, None, None)
         try:
-            executed_middlewares = []
-            for middleware_constructor in task_middlewares:
-                # This loop might get cut short by a middleware raising an exception
-                middleware = middleware_constructor()
-                executed_middlewares.append(middleware)
-                middleware.before(self)
+            def run_task(*args, **kwargs):
+                    with shutdown_cm:
+                        func = self._get_func()
+                        func(*args, **kwargs)
+
+            def mw_wrapper(mwc, task, run):
+                return lambda *args, **kwargs: mwc().run_task(task, run, args, kwargs)
+
+            for middleware_constructor in reversed(task_middlewares):
+                run_task = mw_wrapper(middleware_constructor, self, run_task)
+
             try:
-                with shutdown_cm:
-                    func = self._get_func()
-                    func(*self.args, **self.kwargs)
+                run_task(*self.args, **self.kwargs)
             except WorkerShutdown as e:
                 raise TaskAborted("Worker shutdown") from e
         except Exception:
             exc_info = sys.exc_info()
 
-        outcome = self._generate_outcome(*exc_info)
-
-        for middleware in reversed(executed_middlewares):
-            try:
-                middleware.after(self)
-            except Exception:
-                logger.exception("middleware.after() raised an exception")
-        return outcome
+        return self._generate_outcome(*exc_info)
 
     def _generate_outcome(self, *exc_info):
         for middleware in reversed(task_middlewares):

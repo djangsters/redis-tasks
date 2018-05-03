@@ -1,14 +1,16 @@
 from ..worker import TaskMiddleware
+from ..exceptions import TaskAborted
 from ..conf import settings
 from ..utils import import_attribute
+from contextlib import contextmanager
 
 
 class SentryMiddleware(TaskMiddleware):
     def __init__(self):
         self.client = import_attribute(settings.SENTRY_INSTANCE)
-        self.in_context = False
 
-    def before(self, task):
+    @contextmanager
+    def context(self, task):
         self.client.context.activate()
         self.client.context.merge({'extra': {
             'task_id': task.id,
@@ -18,22 +20,22 @@ class SentryMiddleware(TaskMiddleware):
             'task_description': task.description,
         }})
         self.client.transaction.push(task.func_name)
-        self.in_context = True
+        try:
+            yield
+        finally:
+            self.client.transaction.pop(task.func_name)
+            self.client.context.clear()
+
+    def run_task(self, task, run, args, kwargs):
+        with self.context(task):
+            run(*args, **kwargs)
 
     def process_outcome(self, task, *exc_info):
         if not exc_info[0]:
             return
-        worker_died = not self.in_context
-        if worker_died:
-            self.before(task)
-        self.client.captureException(exc_info=exc_info)
-        if worker_died:
-            self.after(task)
-
-    def after(self, task):
-        self.in_context = False
-        self.client.transaction.pop(task.func_name)
-        self.client.context.clear()
-
+        if isinstance(exc_info[1], TaskAborted) and task.is_reentrant:
+            return
+        with self.context(task):
+            self.client.captureException(exc_info=exc_info)
 
 # TODO: wrap worker?
