@@ -44,7 +44,21 @@ def decode_list(lst):
     return [x.decode() for x in lst]
 
 
+def is_serializable(obj):
+    if obj is None:
+        return True
+    if isinstance(obj, (int, str, float, bool, datetime.datetime)):
+        return True
+    if isinstance(obj, (tuple, list, set)):
+        return all(is_serializable(x) for x in obj)
+    if isinstance(obj, dict):
+        return all(is_serializable(k) and is_serializable(v) for k, v in obj.items())
+    return False
+
+
 def serialize(obj):
+    if not is_serializable(obj):
+        raise ValueError("Passed object contains non-serializable values")
     return pickle.dumps(obj, protocol=pickle.HIGHEST_PROTOCOL)
 
 
