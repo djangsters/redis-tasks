@@ -7,7 +7,8 @@ import pytest
 from tests.utils import TaskFactory, WorkerFactory, QueueFactory, stub, id_list
 from rq.registries import queue_registry
 from rq.exceptions import NoSuchTaskError
-from rq import Queue, Task
+from rq.queue import Queue
+from rq.task import Task
 
 
 def test_queue_basics(assert_atomic):

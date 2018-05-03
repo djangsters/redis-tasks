@@ -1,6 +1,6 @@
 import rq
 from .exceptions import NoSuchWorkerError
-from .utils import current_timestamp, atomic_pipeline, decode_list
+from .utils import atomic_pipeline, decode_list
 from .conf import connection, settings, RedisKey
 
 
@@ -10,19 +10,21 @@ class ExpiringRegistry:
 
     @atomic_pipeline
     def add(self, task, *, pipeline):
-        pipeline.zadd(self.key, current_timestamp(), task.id)
+        timestamp = connection.ftime()
+        pipeline.zadd(self.key, {task.id: timestamp})
 
     def get_task_ids(self):
         return decode_list(connection.zrange(self.key, 0, -1))
 
     def expire(self):
         """Remove expired tasks from registry."""
-        cutoff_time = current_timestamp() - settings.EXPIRING_REGISTRIES_TTL
+        timestamp = connection.ftime()
+        cutoff_time = timestamp - settings.EXPIRING_REGISTRIES_TTL
         expired_task_ids = decode_list(connection.zrangebyscore(
             self.key, 0, cutoff_time))
         if expired_task_ids:
             connection.zremrangebyscore(self.key, 0, cutoff_time)
-            rq.Task.delete_many(expired_task_ids)
+            rq.task.Task.delete_many(expired_task_ids)
 
 
 finished_task_registry = ExpiringRegistry('finished')
@@ -40,24 +42,22 @@ class WorkerRegistry:
 
     @atomic_pipeline
     def add(self, worker, *, pipeline):
-        pipeline.zadd(self.key, current_timestamp(), worker.id)
+        timestamp = connection.ftime()
+        pipeline.zadd(self.key, {worker.id: timestamp})
 
     def heartbeat(self, worker):
-        score = connection.zscore(self.key, worker.id)
-        if not score or score <= self._get_oldest_valid_heartbeat():
+        timestamp = connection.ftime()
+        updated = connection.zadd(self.key, {worker.id: timestamp}, xx=True, ch=True)
+        if not updated:
             raise NoSuchWorkerError()
-        connection.zadd(self.key, current_timestamp(), worker.id)
 
     @atomic_pipeline
     def remove(self, worker, *, pipeline):
         pipeline.zrem(self.key, worker.id)
 
-    def get_alive_ids(self):
-        # TODO: why would we want this? We should probably always return all
-        # workers
-        oldest_valid = self._get_oldest_valid_heartbeat()
+    def get_worker_ids(self):
         return decode_list(connection.zrangebyscore(
-            self.key, oldest_valid, '+inf'))
+            self.key, '-inf', '+inf'))
 
     def get_running_task_ids(self):
         task_key_prefix = RedisKey('worker_task:')
@@ -77,12 +77,9 @@ class WorkerRegistry:
         return decode_list(lua(keys=[self.key, task_key_prefix]))
 
     def get_dead_ids(self):
-        oldest_valid = self._get_oldest_valid_heartbeat()
+        oldest_valid = connection.ftime() - settings.WORKER_HEARTBEAT_TIMEOUT
         return decode_list(connection.zrangebyscore(
             self.key, '-inf', oldest_valid))
-
-    def _get_oldest_valid_heartbeat(self):
-        return current_timestamp() - settings.WORKER_HEARTBEAT_TIMEOUT
 
 
 worker_registry = WorkerRegistry()

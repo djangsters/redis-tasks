@@ -1,16 +1,15 @@
+import datetime
+import random
+import uuid
 
 import pytest
-import random
-import datetime
-import uuid
-from types import SimpleNamespace
 
-from rq import Task, Queue, rq_task
-from rq.task import TaskStatus, TaskOutcome
-from rq.exceptions import NoSuchTaskError, InvalidOperation
-from rq.registries import finished_task_registry, failed_task_registry, worker_registry
-from rq.utils import utcnow, decode_list
-from tests.utils import TaskFactory, WorkerFactory, QueueFactory, reentrant_stub, stub, id_list
+from rq.exceptions import InvalidOperation, NoSuchTaskError
+from rq.registries import (failed_task_registry, finished_task_registry,
+                           worker_registry)
+from rq.task import Task, TaskOutcome, TaskStatus, rq_task
+from rq.utils import decode_list
+from tests.utils import QueueFactory, WorkerFactory, reentrant_stub, stub
 
 
 class SomeClass:
@@ -47,21 +46,8 @@ def test_init():
     assert t.description == "tests.utils.stub('foo', bar='a')"
 
 
-class NowMocker:
-    def __init__(self, mocker):
-        self.seq = 0
-        self.mocker = mocker
-        self.now = None
-
-    def step(self):
-        self.seq += 1
-        self.now = utcnow().replace(second=self.seq, microsecond=0)
-        self.mocker.patch('rq.task.utcnow', return_value=self.now)
-        return self.now
-
-
-def test_state_transistions(assert_atomic, connection, mocker):
-    time = NowMocker(mocker)
+def test_state_transistions(assert_atomic, connection, time_mocker):
+    time = time_mocker('rq.task.utcnow')
     task = Task(reentrant_stub)
     q = QueueFactory()
     w = WorkerFactory()
@@ -75,7 +61,7 @@ def test_state_transistions(assert_atomic, connection, mocker):
     assert q.get_task_ids() == [task.id]
     assert connection.exists(task.key)
     for t in [task, Task.fetch(task.id)]:
-        assert task.enqueued_at == time.now
+        assert t.enqueued_at == time.now
         assert t.status == TaskStatus.QUEUED
         assert t.origin == q.name
 
@@ -279,6 +265,12 @@ def test_persistence(assert_atomic, connection):
     copy.refresh()
     assert as_dict(copy) == as_dict(task)
     assert as_dict(Task.fetch(task.id)) == as_dict(task)
+
+    task = Task(stub)
+    with pytest.raises(NoSuchTaskError):
+        task.refresh()
+    with pytest.raises(NoSuchTaskError):
+        Task.fetch('nonexist')
 
 
 def test_init_save_fetch_delete(connection, assert_atomic):

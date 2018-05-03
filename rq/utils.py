@@ -33,11 +33,6 @@ def utcparse(string):
     return datetime.datetime.strptime(string, '%Y-%m-%dT%H:%M:%SZ')
 
 
-def current_timestamp():
-    """Returns current UTC timestamp"""
-    return calendar.timegm(datetime.datetime.utcnow().utctimetuple())
-
-
 def enum(name, *sequential, **named):
     values = dict(zip(sequential, range(len(sequential))), **named)
     return type(str(name), (), values)

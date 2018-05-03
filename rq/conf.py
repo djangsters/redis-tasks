@@ -52,9 +52,47 @@ class Settings:
 settings = Settings()
 
 
+class RQRedis(redis.StrictRedis):
+    RESPONSE_CALLBACKS = redis.StrictRedis.RESPONSE_CALLBACKS
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.set_response_callback('EXISTS', int)
+
+    def pipeline(self, transaction=True, shard_hint=None):
+        return RQPipeline(self.connection_pool, self.response_callbacks, transaction, shard_hint)
+
+    def exists(self, *keys):
+        return self.execute_command('EXISTS', *keys)
+
+    def ftime(self):
+        seconds, microseconds = self.time()
+        return seconds + microseconds * 10**-6
+
+    def zadd(self, name, items, nx=False, xx=False, ch=False, incr=False):
+        if nx and xx:
+            raise redis.RedisError("ZADD can't use both NX and XX modes")
+        pieces = []
+        if nx:
+            pieces.append('NX')
+        if xx:
+            pieces.append('XX')
+        if ch:
+            pieces.append('CH')
+        if incr:
+            pieces.append('INCR')
+        for k, v in items.items():
+            pieces.extend([v, k])
+        return self.execute_command('ZADD', name, *pieces)
+
+
+class RQPipeline(redis.client.BasePipeline, RQRedis):
+    pass
+
+
 @LazyObject
 def connection():
-    return redis.StrictRedis.from_url(settings.REDIS_URL)
+    return RQRedis.from_url(settings.REDIS_URL)
 
 
 @LazyObject

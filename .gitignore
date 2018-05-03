@@ -2,6 +2,7 @@
 __pycache__
 *.egg-info
 
+htmlcov
 /dump.rdb
 /.direnv
 /.envrc

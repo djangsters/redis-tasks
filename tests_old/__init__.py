@@ -48,9 +48,6 @@ class RQTestCase(unittest.TestCase):
         # Store the connection (for sanity checking)
         cls.testconn = testconn
 
-        # Shut up logging
-        logging.disable(logging.ERROR)
-
     def setUp(self):
         # Flush beforewards (we like our hygiene)
         self.testconn.flushdb()

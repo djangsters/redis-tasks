@@ -1,7 +1,10 @@
 import os
 import copy
+import socket
+import signal
 from contextlib import contextmanager
 from unittest import mock
+import multiprocessing
 
 import pytest
 import redis
@@ -34,6 +37,22 @@ def settings():
 
 
 @pytest.fixture(autouse=True, scope="function")
+def mock_signal(mocker):
+    """Prevent tests from messing with the signal handling of the pytest process"""
+    main_pid = os.getpid()
+    orig_signal = signal.signal
+
+    def wrapped_signal(*args, **kwargs):
+        if os.getpid() == main_pid:
+            return
+        else:
+            return orig_signal(*args, **kwargs)
+
+    mocker.patch('signal.signal', new=wrapped_signal)
+    yield
+
+
+@pytest.fixture(autouse=True, scope="function")
 def clear_redis():
     do_clear_redis()
     yield
@@ -54,14 +73,14 @@ def connection():
 class AtomicRedis:
     def __init__(self, wrap, exceptions):
         self.wrapped = wrap
-        self.exceptions = exceptions
+        self.exceptions = exceptions + ['ftime']
         self._atomic_counter = 0
 
     def __getattr__(self, name):
         __tracebackhide__ = True
         if name in self.exceptions:
             return getattr(self.wrapped, name)
-        if name not in ["pipeline", "transaction"]:
+        if name not in ["pipeline", "transaction", "register_script"]:
             raise Exception(f"Attempted call to connection.{name} in assert_atomic")
         if self._atomic_counter > 0:
             raise Exception(f"Second call to connection function in assert_atomic")
@@ -78,3 +97,31 @@ def assert_atomic(mocker):
                              _wrapped=AtomicRedis(real_connection, exceptions)):
             yield
     yield cm
+
+
+class TimeMocker:
+    def __init__(self, mocker, target):
+        self.seq = 0
+        self.mocker = mocker
+        self.target = target
+        self.now = None
+
+    def step(self):
+        from rq.utils import utcnow
+        self.seq += 1
+        self.now = utcnow().replace(second=self.seq, microsecond=0)
+        self.mocker.patch(self.target, return_value=self.now)
+        return self.now
+
+
+@pytest.fixture()
+def time_mocker(mocker):
+    yield lambda target: TimeMocker(mocker, target)
+
+
+@pytest.fixture(autouse=True)
+def kill_child_processes():
+    yield
+    for child in multiprocessing.active_children():
+        print(f"Killing left over process {child.name}")
+        os.kill(child.pid, signal.SIGKILL)

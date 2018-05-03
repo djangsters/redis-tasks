@@ -1,16 +1,17 @@
-import uuid
 import logging
 import sys
 import traceback
+import uuid
 from contextlib import ExitStack
+from functools import partial
 
 import rq
-from .conf import connection, settings, RedisKey, task_middlewares
-from .exceptions import NoSuchTaskError, TaskAborted, WorkerShutdown, WorkerDied, InvalidOperation
+from .conf import RedisKey, connection, settings, task_middlewares
+from .exceptions import (InvalidOperation, NoSuchTaskError, TaskAborted,
+                         WorkerDied, WorkerShutdown)
 from .registries import failed_task_registry, finished_task_registry
-
-from .utils import (enum, import_attribute, atomic_pipeline, utcformat, utcnow,
-                    utcparse, LazyObject, deserialize, serialize, generate_callstring)
+from .utils import (atomic_pipeline, deserialize, enum, generate_callstring,
+                    import_attribute, serialize, utcformat, utcnow, utcparse, LazyObject)
 
 logger = logging.getLogger(__name__)
 
@@ -25,7 +26,13 @@ TaskStatus = enum(
 
 
 def rq_task(*args, **kwargs):
-    return TaskProperties(*args, **kwargs).decorate
+    def decorator(f):
+        # Constructing TaskProperties instances initializes the settings.
+        # We do not want to do this on import of user modules, so be lazy here.
+        f._rq_task_properties = LazyObject(lambda: TaskProperties(*args, **kwargs))
+        return f
+
+    return decorator
 
 
 class TaskProperties:
@@ -33,13 +40,9 @@ class TaskProperties:
         self.reentrant = reentrant
         self.timeout = timeout or settings.DEFAULT_TASK_TIMEOUT
 
-    def decorate(self, f):
-        f._rq_task_properties = self
-        return f
-
 
 class TaskOutcome:
-    def __init__(self, outcome, *, message=None):
+    def __init__(self, outcome, message=None):
         assert outcome in ['success', 'failure', 'aborted']
         self.outcome = outcome
         self.message = message

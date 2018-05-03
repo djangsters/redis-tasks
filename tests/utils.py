@@ -1,9 +1,21 @@
-from rq import Task, Queue, Worker, rq_task
+import os
+import socket
+from types import SimpleNamespace
 
+from rq.queue import Queue
+from rq.task import Task, rq_task
+from rq.worker import Worker
 
 worker_sequence = 0
 queue_sequence = 0
 task_sequence = 0
+
+
+mock_func_target = None
+
+
+def mock_func_proxy(*args, **kwargs):
+    return mock_func_target(*args, **kwargs)
 
 
 def stub():

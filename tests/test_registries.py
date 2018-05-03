@@ -16,17 +16,17 @@ def test_expiring_registry(connection, settings, mocker, assert_atomic):
 
     assert registry.key == RedisKey('testexpire_tasks')
 
-    timestamp = mocker.patch('rq.registries.current_timestamp')
-    timestamp.return_value = 1000
+    timestamp = mocker.patch('rq.conf.RQRedis.time')
+    timestamp.return_value = (1000, 0)
     with assert_atomic():
         registry.add(task1)
-    timestamp.return_value = 1004
+    timestamp.return_value = (1004, 0)
     registry.add(task2)
 
     registry.expire()
     assert registry.get_task_ids() == [task1.id, task2.id]
 
-    timestamp.return_value = 1012
+    timestamp.return_value = (1012, 0)
     registry.expire()
     assert registry.get_task_ids() == [task2.id]
     delete_tasks.assert_called_once_with([task1.id])
@@ -38,32 +38,36 @@ def test_worker_registry(connection, settings, mocker, assert_atomic):
     worker2 = WorkerFactory()
     settings.WORKER_HEARTBEAT_TIMEOUT = 100
 
-    timestamp = mocker.patch('rq.registries.current_timestamp')
-    timestamp.return_value = 1000
+    timestamp = mocker.patch('rq.conf.RQRedis.time')
+    timestamp.return_value = (1000, 0)
     with assert_atomic():
         registry.add(worker1)
-    timestamp.return_value = 1050
+    timestamp.return_value = (1050, 0)
     registry.add(worker2)
-    assert registry.get_alive_ids() == [worker1.id, worker2.id]
+    assert registry.get_worker_ids() == [worker1.id, worker2.id]
 
-    timestamp.return_value = 1120
-    assert registry.get_alive_ids() == [worker2.id]
+    timestamp.return_value = (1120, 0)
     assert registry.get_dead_ids() == [worker1.id]
 
+    registry.heartbeat(worker1)
+    timestamp.return_value = (1140, 0)
+    assert registry.get_dead_ids() == []
+
+    timestamp.return_value = (1200, 0)
+    assert registry.get_dead_ids() == [worker2.id]
+
+    with assert_atomic():
+        registry.remove(worker1)
+    # worker is already dead
     with pytest.raises(NoSuchWorkerError):
         registry.heartbeat(worker1)
-
-    timestamp.return_value = 1140
-    registry.heartbeat(worker2)
-    timestamp.return_value = 1200
-    assert registry.get_alive_ids() == [worker2.id]
 
     with assert_atomic():
         with connection.pipeline() as pipe:
             registry.remove(worker1, pipeline=pipe)
             registry.remove(worker2, pipeline=pipe)
             pipe.execute()
-    assert registry.get_alive_ids() == []
+    assert registry.get_worker_ids() == []
     assert registry.get_dead_ids() == []
 
 

@@ -1,28 +1,21 @@
 import sys
-from types import SimpleNamespace
 from contextlib import contextmanager
 
 import pytest
 
-from rq import Task
+from rq.task import Task
 from rq.exceptions import WorkerShutdown, TaskAborted
-from tests.utils import stub, Something
-
-mock_me = SimpleNamespace(f=None)
-
-
-def mock_proxy(*args, **kwargs):
-    return mock_me.f(*args, **kwargs)
+from tests.utils import stub, Something, mock_func_proxy
 
 
 def test_successful_execute(mocker):
-    task = Task(mock_proxy, ["foo"], {"foo": "bar"})
-    func = mocker.patch.object(mock_me, 'f')
+    task = Task(mock_func_proxy, ["foo"], {"foo": "bar"})
+    func = mocker.patch('tests.utils.mock_func_target')
     outcome = task.execute()
     assert func.called_once_with("foo", foo="bar")
     assert outcome.outcome == 'success'
 
-    task = Task(mock_proxy)
+    task = Task(mock_func_proxy)
     func.reset_mock()
     outcome = task.execute()
     assert func.called_once_with("foo", foo="bar")
@@ -30,8 +23,8 @@ def test_successful_execute(mocker):
 
 
 def test_failed_execute(mocker):
-    func = mocker.patch.object(mock_me, 'f', side_effect=ValueError("TestException"))
-    task = Task(mock_proxy)
+    func = mocker.patch('tests.utils.mock_func_target', side_effect=ValueError("TestException"))
+    task = Task(mock_func_proxy)
     outcome = task.execute()
     assert func.called_once_with()
     assert outcome.outcome == 'failure'
@@ -39,8 +32,8 @@ def test_failed_execute(mocker):
 
 
 def test_aborted_execute(mocker):
-    func = mocker.patch.object(mock_me, 'f', side_effect=WorkerShutdown())
-    task = Task(mock_proxy)
+    func = mocker.patch('tests.utils.mock_func_target', side_effect=WorkerShutdown())
+    task = Task(mock_func_proxy)
     outcome = task.execute()
     assert func.called_once_with()
     assert outcome.outcome == 'aborted'
@@ -53,8 +46,8 @@ def test_shutdown_cm(mocker):
         raise WorkerShutdown()
         yield
 
-    func = mocker.patch.object(mock_me, 'f')
-    task = Task(mock_proxy)
+    func = mocker.patch('tests.utils.mock_func_target')
+    task = Task(mock_func_proxy)
     outcome = task.execute(shutdown_cm=entry_shutdown_cm())
     assert not func.called
     assert outcome.outcome == 'aborted'
@@ -83,7 +76,7 @@ def test_shutdown_cm(mocker):
     def checking_func():
         assert in_cm
 
-    func = mocker.patch.object(mock_me, 'f', new=checking_func)
+    func = mocker.patch('tests.utils.mock_func_target', new=checking_func)
     outcome = task.execute(shutdown_cm=reporting_cm())
     assert outcome.outcome == 'success'
 
