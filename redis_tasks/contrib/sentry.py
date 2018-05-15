@@ -37,5 +37,3 @@ class SentryMiddleware(TaskMiddleware):
             return
         with self.context(task):
             self.client.captureException(exc_info=exc_info)
-
-# TODO: wrap worker?

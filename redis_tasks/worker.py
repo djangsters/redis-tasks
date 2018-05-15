@@ -1,5 +1,7 @@
 import logging
 
+from operator import attrgetter
+
 from .conf import RedisKey, connection, settings
 from .exceptions import WorkerDoesNotExist
 from .queue import Queue
@@ -20,7 +22,8 @@ WorkerState = enum(
 class Worker:
     @classmethod
     def all(cls):
-        return [cls.fetch(id) for id in worker_registry.get_worker_ids()]
+        return list(sorted((cls.fetch(id) for id in worker_registry.get_worker_ids()),
+                           key=attrgetter('description')))
 
     @classmethod
     def fetch(cls, id):
@@ -97,12 +100,12 @@ class Worker:
     def heartbeat(self):
         """Send a heartbeat.
 
-        Raises a NoSuchworkerError if the registry considers this worker as dead"""
+        Raises WorkerDoesNotExist if the registry considers this worker as dead"""
         worker_registry.heartbeat(self)
 
     @atomic_pipeline
     def startup(self, *, pipeline):
-        logger.debug(f'Registering birth of worker {self.description} ({self.id})')
+        logger.info(f'Worker {self.description} [{self.id}] started')
         self.state = WorkerState.IDLE
         self.started_at = utcnow()
         worker_registry.add(self, pipeline=pipeline)
@@ -128,16 +131,17 @@ class Worker:
 
     @atomic_pipeline
     def shutdown(self, *, pipeline):
+        logger.info(f'Worker {self.description} [{self.id}] shut down')
         assert self.state == WorkerState.IDLE
         worker_registry.remove(self, pipeline=pipeline)
         self.state = WorkerState.DEAD
         self.shutdown_at = utcnow()
         self._save(['state', 'shutdown_at'], pipeline=pipeline)
         pipeline.expire(self.key, settings.DEAD_WORKER_TTL)
-        pipeline.expire(self.task_key, settings.DEAD_WORKER_TTL)
 
     @atomic_pipeline
     def died(self, *, pipeline):
+        logger.warning(f'Worker {self.description} [{self.id}] died')
         worker_registry.remove(self, pipeline=pipeline)
         self.shutdown_at = utcnow()
         if self.current_task_id:

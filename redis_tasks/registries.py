@@ -13,18 +13,37 @@ class ExpiringRegistry:
         timestamp = connection.ftime()
         pipeline.zadd(self.key, {task.id: timestamp})
 
-    def get_task_ids(self):
-        return decode_list(connection.zrange(self.key, 0, -1))
+    def get_task_ids(self, offset=0, length=-1):
+        end = offset + length if length >= 0 else length
+        return decode_list(connection.zrange(self.key, offset, end))
+
+    def get_tasks(self, offset=0, length=-1):
+        return [redis_tasks.task.Task.fetch(x) for x in self.get_task_ids(offset, length)]
+
+    def empty(self):  # TODO: test
+        def transaction(pipeline):
+            task_ids = decode_list(pipeline.zrange(self.key, 0, -1))
+            pipeline.multi()
+            pipeline.delete(self.key)
+            redis_tasks.task.Task.delete_many(task_ids, pipeline=pipeline)
+        connection.transaction(transaction, self.key)
+
+    def count(self):
+        return connection.zcard(self.key)
 
     def expire(self):
         """Remove expired tasks from registry."""
         timestamp = connection.ftime()
         cutoff_time = timestamp - settings.EXPIRING_REGISTRIES_TTL
-        expired_task_ids = decode_list(connection.zrangebyscore(
-            self.key, 0, cutoff_time))
-        if expired_task_ids:
-            connection.zremrangebyscore(self.key, 0, cutoff_time)
-            redis_tasks.task.Task.delete_many(expired_task_ids)
+
+        def transaction(pipeline):
+            expired_task_ids = decode_list(pipeline.zrangebyscore(
+                self.key, 0, cutoff_time))
+            if expired_task_ids:
+                pipeline.multi()
+                pipeline.zremrangebyscore(self.key, 0, cutoff_time)
+                redis_tasks.task.Task.delete_many(expired_task_ids, pipeline=pipeline)
+        connection.transaction(transaction, self.key)
 
 
 finished_task_registry = ExpiringRegistry('finished')
@@ -34,7 +53,7 @@ failed_task_registry = ExpiringRegistry('failed')
 def registry_maintenance():
     finished_task_registry.expire()
     failed_task_registry.expire()
-    worker_registry.handle_dead_workers()
+    worker_registry.handle_died_workers()
 
 
 class WorkerRegistry:
@@ -60,27 +79,29 @@ class WorkerRegistry:
         return decode_list(connection.zrangebyscore(
             self.key, '-inf', '+inf'))
 
-    def get_running_task_ids(self):
+    def get_running_tasks(self):
+        """Returns a worker_id -> task_id dict"""
         task_key_prefix = RedisKey('worker_task:')
         lua = connection.register_script("""
             local workers_key, task_key_prefix = unpack(KEYS)
             local worker_ids = redis.call("ZRANGE", workers_key, 0, -1)
-            local task_ids = {}
+            local out = {}
             for _, worker_id in ipairs(worker_ids) do
                 local task_key = task_key_prefix .. worker_id
                 local task_id = redis.call("LINDEX", task_key, 0)
                 if task_id ~= false then
-                    table.insert(task_ids, task_id)
+                    table.insert(out, worker_id)
+                    table.insert(out, task_id)
                 end
             end
-            return task_ids
+            return out
         """)
-        return decode_list(lua(keys=[self.key, task_key_prefix]))
+        it = iter(decode_list(lua(keys=[self.key, task_key_prefix])))
+        return dict(zip(it, it))
 
-    def handle_died_workers(self):
-        # TODO: Test
+    def handle_died_workers(self):  # TODO: Test
         from redis_tasks.worker import Worker
-        died_worker_ids = worker_registry.get_dead_ids(self)
+        died_worker_ids = worker_registry.get_dead_ids()
         for worker_id in died_worker_ids:
             worker = Worker.fetch(worker_id)
             worker.died()
@@ -99,8 +120,7 @@ class QueueRegistry:
         self.key = RedisKey('queues')
 
     def get_names(self):
-        return list(sorted(decode_list(
-            connection.smembers(self.key))))
+        return decode_list(connection.smembers(self.key))
 
     @atomic_pipeline
     def add(self, queue, *, pipeline):

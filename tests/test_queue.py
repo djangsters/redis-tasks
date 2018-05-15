@@ -93,46 +93,55 @@ def test_push(assert_atomic):
     assert q.get_task_ids()[0] == task.id
 
 
-def test_empty_delete(assert_atomic, connection, mocker):
-    q = Queue()
-    t1 = q.enqueue_call(stub)
-    t2 = q.enqueue_call(stub)
-    assert connection.exists(t1.key)
-    with assert_atomic():
+class TestEmptyAndDelete:
+    def test_empty_empty_queue(self):
+        q = Queue()
         q.empty()
-    assert not connection.exists(q.key)
-    assert not connection.exists(q.unblock_key)
-    assert q.name in queue_registry.get_names()
-    assert not connection.exists(t1.key)
-    assert not connection.exists(t2.key)
 
-    q.enqueue_call(stub)
-    q.enqueue_call(stub)
-    with assert_atomic():
-        q.delete()
-    assert not connection.exists(q.key)
-    assert not connection.exists(q.unblock_key)
-    assert q.name not in queue_registry.get_names()
+    def test_empty(self, assert_atomic, connection, mocker):
+        q = Queue()
+        t1 = q.enqueue_call(stub)
+        t2 = q.enqueue_call(stub)
+        assert connection.exists(t1.key)
+        with assert_atomic():
+            q.empty()
+        assert not connection.exists(q.key)
+        assert not connection.exists(q.unblock_key)
+        assert q.name in queue_registry.get_names()
+        assert not connection.exists(t1.key)
+        assert not connection.exists(t2.key)
 
-    task1 = q.enqueue_call(stub)
-    task2 = None
+    def test_delete(self, assert_atomic, connection, mocker):
+        q = Queue()
+        q.enqueue_call(stub)
+        q.enqueue_call(stub)
+        with assert_atomic():
+            q.delete()
+        assert not connection.exists(q.key)
+        assert not connection.exists(q.unblock_key)
+        assert q.name not in queue_registry.get_names()
 
-    def task_delete(task_ids, **kwargs):
-        nonlocal task2
-        if not task2:
-            # interrupt the transaction with the creation of a new task
-            task2 = q.enqueue_call(stub)
-        else:
-            # assert that the previous transaction attempt was canceled
-            assert connection.exists(task1.key)
-        orig_delete_many(task_ids, **kwargs)
+    def test_delete_transaction(self, assert_atomic, connection, mocker):
+        q = Queue()
+        task1 = q.enqueue_call(stub)
+        task2 = None
 
-    orig_delete_many = Task.delete_many
-    mocker.patch.object(Task, 'delete_many', new=task_delete)
-    assert connection.exists(task1.key)
-    q.empty()
-    assert not connection.exists(task1.key)
-    assert not connection.exists(task2.key)
+        def task_delete(task_ids, **kwargs):
+            nonlocal task2
+            if not task2:
+                # interrupt the transaction with the creation of a new task
+                task2 = q.enqueue_call(stub)
+            else:
+                # assert that the previous transaction attempt was canceled
+                assert connection.exists(task1.key)
+            orig_delete_many(task_ids, **kwargs)
+
+        orig_delete_many = Task.delete_many
+        mocker.patch.object(Task, 'delete_many', new=task_delete)
+        assert connection.exists(task1.key)
+        q.empty()
+        assert not connection.exists(task1.key)
+        assert not connection.exists(task2.key)
 
 
 def test_dequeue(connection):

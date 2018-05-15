@@ -6,6 +6,7 @@
 #
 attrs==17.4.0             # via pytest
 click==6.7
+croniter==0.3.20
 first==2.0.1              # via pip-tools
 more-itertools==4.1.0     # via pytest
 pip-tools==2.0.2
@@ -13,5 +14,7 @@ pluggy==0.6.0             # via pytest
 py==1.5.3                 # via pytest
 pytest-mock==1.9.0
 pytest==3.5.0
+python-dateutil==2.7.2    # via croniter
+pytz==2018.4
 redis==2.10.6
-six==1.11.0               # via more-itertools, pip-tools, pytest
+six==1.11.0               # via more-itertools, pip-tools, pytest, python-dateutil

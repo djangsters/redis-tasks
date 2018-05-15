@@ -19,7 +19,7 @@ from .task import TaskOutcome
 from .utils import import_attribute, utcnow, utcparse, utcformat
 from .worker import Worker
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger('redis_tasks.worker')
 
 
 class PostponeShutdown:
@@ -70,10 +70,21 @@ def generate_worker_description():
     return '{0}.{1}'.format(shortname, os.getpid())
 
 
+def worker_main(queue_names=["default"], *, burst=False, description=None):
+    if isinstance(queue_names, str):
+        queue_names = [queue_names]
+    process = WorkerProcess([Queue(n) for n in queue_names], description=description)
+    try:
+        return process.run(burst)
+    except ShutdownRequested:
+        sys.exit()
+
+
 class WorkerProcess:
-    def __init__(self, queues):
-        description_generator = import_attribute(settings.WORKER_DESCRIPTION_FUNCTION)
-        description = description_generator()
+    def __init__(self, queues, *, description=None):
+        if not description:
+            description_generator = import_attribute(settings.WORKER_DESCRIPTION_FUNCTION)
+            description = description_generator()
         id = str(uuid.uuid4())
         self.worker = Worker(id, description=description, queues=queues)
         self.maintenance = Maintenance()
@@ -86,8 +97,6 @@ class WorkerProcess:
         Returns the number of tasks that were processed in burst mode"""
         self.install_signal_handlers()
         self.worker.startup()
-        logger.info("worker {}({!r}) started".format(
-            self.worker.description, self.worker.id))
 
         if settings.WORKER_PRELOAD_FUNCTION:
             worker_preload = import_attribute(settings.WORKER_PRELOAD_FUNCTION)
@@ -108,13 +117,13 @@ class WorkerProcess:
                 self.maintenance.run_if_neccessary()
                 self.maybe_shutdown()
             else:
-                logger.info("Burst finished, quitting")
+                logger.info(f"Burst finished after {tasks_processed} tasks, shutting down")
                 return tasks_processed
         finally:
             self.worker.shutdown()
 
     def queue_iter(self, burst):
-        logger.debug('Listening on {0}...'.format(
+        logger.debug('Worker listening on {}'.format(
             ', '.join(q.name for q in self.worker.queues)))
 
         while True:
@@ -144,14 +153,12 @@ class WorkerProcess:
 
     def process_task(self, task):
         self.worker.start_task(task)
-        logger.info('{0}: {1} ({2})'.format(task.origin, task.description, task.id))
         try:
             outcome = self.execute_task(task)
         except Exception:
             exc_string = ''.join(traceback.format_exception(*sys.exc_info()))
             outcome = TaskOutcome('failure', message=exc_string)
         self.worker.end_task(task, outcome)
-        logger.info(f'{task.origin}: Task {outcome.outcome} ({task.id})')
         return True
 
     def execute_task(self, task):
@@ -198,9 +205,8 @@ class WorkerProcess:
         logger.debug('Got signal {0}'.format(signum))
         if self.shutdown_requested:
             return
-        logger.debug('Shutdown request noted')
+        logger.debug('Shutdown request accepted')
         self.shutdown_requested = True
-        # TODO: log shutdown request
         if self.in_interruptible:
             logger.debug('Interruptible, raising ShutdownRequested')
             raise ShutdownRequested()

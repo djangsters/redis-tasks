@@ -40,6 +40,15 @@ def test_aborted_execute(mocker):
     assert outcome.message == 'Worker shutdown'
 
 
+def test_broken_task():
+    task = Task(mock_func_proxy)
+    task.func_name = "nonimportable.function"
+    outcome = task.execute()
+    assert outcome.outcome == 'failure'
+    assert outcome.message.splitlines()[-1].startswith(
+        'RuntimeError: Failed to import task function')
+
+
 def test_shutdown_cm(mocker):
     @contextmanager
     def entry_shutdown_cm():

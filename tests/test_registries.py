@@ -4,7 +4,7 @@ from redis_tasks import registries
 from redis_tasks.exceptions import WorkerDoesNotExist
 from redis_tasks.conf import RedisKey
 from redis_tasks.task import TaskOutcome
-from tests.utils import TaskFactory, WorkerFactory, QueueFactory, stub
+from tests.utils import TaskFactory, WorkerFactory, QueueFactory, stub, Something
 
 
 def test_expiring_registry(connection, settings, mocker, assert_atomic):
@@ -29,7 +29,7 @@ def test_expiring_registry(connection, settings, mocker, assert_atomic):
     timestamp.return_value = (1012, 0)
     registry.expire()
     assert registry.get_task_ids() == [task2.id]
-    delete_tasks.assert_called_once_with([task1.id])
+    delete_tasks.assert_called_once_with([task1.id], pipeline=Something)
 
 
 def test_worker_registry(connection, settings, mocker, assert_atomic):
@@ -81,18 +81,18 @@ def test_worker_reg_running_tasks():
     worker1.startup()
     worker2.startup()
 
-    assert registry.get_running_task_ids() == []
+    assert registry.get_running_tasks() == dict()
     queue.push(t1)
     queue.dequeue(worker1)
-    assert registry.get_running_task_ids() == [t1.id]
+    assert registry.get_running_tasks() == {worker1.id: t1.id}
     worker1.start_task(t1)
 
     queue.push(t2)
     queue.dequeue(worker2)
     worker2.start_task(t2)
-    assert set(registry.get_running_task_ids()) == {t1.id, t2.id}
+    assert registry.get_running_tasks() == {worker1.id: t1.id, worker2.id: t2.id}
     worker1.end_task(t1, TaskOutcome("success"))
-    assert registry.get_running_task_ids() == [t2.id]
+    assert registry.get_running_tasks() == {worker2.id: t2.id}
 
 
 def test_queue_registry(assert_atomic, connection):
@@ -104,10 +104,14 @@ def test_queue_registry(assert_atomic, connection):
     with assert_atomic():
         registry.add(queue1)
     registry.add(queue2)
-    assert registry.get_names() == list(sorted([queue1.name, queue2.name]))
+    assert set(registry.get_names()) == {queue1.name, queue2.name}
 
     with assert_atomic():
         registry.remove(queue1)
     assert registry.get_names() == [queue2.name]
     registry.remove(queue2)
     assert registry.get_names() == []
+
+
+def test_maintenance():
+    registries.registry_maintenance()

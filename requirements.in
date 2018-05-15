@@ -3,3 +3,5 @@ click
 pytest
 pytest-mock
 pip-tools
+croniter
+pytz

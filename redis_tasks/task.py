@@ -54,70 +54,6 @@ class TaskOutcome:
         return 'TaskOutcome({})'.format(", ".join(args))
 
 
-class TaskMiddleware:
-    def run_task(task, run, args, kwargs):
-        return run(*args, **kwargs)
-
-    def process_outcome(task, outcome):
-        pass
-
-
-class TaskMiddlewareOld:
-    """Base class for a task execution middleware.
-
-    Before task execution, the `before()` methods are called in the order the
-    middlewares are listen in TODO[setting]. Any middleware can short-circuit
-    this process by raising an exception in the `before()` method. The following
-    `before()` method will then not be called.
-
-    Independently of whether the task ran or a middleware interupted the
-    startup, all configured middelwares' `process_outcome()` methods are called
-    after execution. If the worker running the task did not die and a
-    middleware's `before()` method was called for this task, the
-    `process_outcome()` method will be called on the same instance of the
-    middleware. Otherwise a new instance is created.
-
-    Finally, if the worker did not die, the `after()` method is called for all
-    middlewares that had their `before()` method called. This is guaranteed to
-    happen on the same instance. This is the right place to do process-local
-    cleanup.
-
-    The TaskAborted exception has a special meaning in this context. It is raised
-    by redis_tasks if the task did not fail itself, but was aborted for external reasons.
-    It can also be raised by any middleware. If it is passed through or raised
-    by the outer-most middleware, reentrant tasks will be reenqueued at the
-    front of the queue they came from."""
-
-    def before(self, task):
-        """Is called before the task is started.
-
-        If this raises an exception, execution is canceled the task is treated as failed."""
-        pass
-
-    def process_outcome(self, task, exc_type=None, exc_val=None, exc_tb=None):
-        """Process the outcome of the task.
-
-        If the task failed, the three exc_ parameters will be set.
-        This can happen for the following reasons:
-        * The task raised an exception
-        * The worker shut down during execution
-        * The worked died unexpectedly during execution
-        * The task reached its timeout
-        * Another middleware raised an exception
-
-        Can return True to treat the task as succeeded.
-        Returning a non-true value (e.g. None), passes the current state on to
-        the next middleware.
-        Raising an exception passes the raised exception to the next middleware."""
-        pass
-
-    def after(self, task):
-        """Is called after `process_outcome`.
-
-        This function might not be called if the worker is exiting early"""
-        pass
-
-
 class Task:
     def __init__(self, func=None, args=None, kwargs=None, *, fetch_id=None):
         if fetch_id:
@@ -128,10 +64,18 @@ class Task:
         self.id = str(uuid.uuid4())
 
         try:
-            self.func_name = '{0}.{1}'.format(func.__module__, func.__name__)
-            assert self._get_func() == func
+            if isinstance(func, str):
+                # TODO: Test
+                self.func_name = func
+                func = self._get_func()
+            else:
+                self.func_name = '{0}.{1}'.format(func.__module__, func.__name__)
+                assert self._get_func() == func
         except Exception as e:
             raise ValueError('The given task function is not importable') from e
+        if not callable(func):
+            # TODO: Test
+            raise ValueError('The given task function is not callable')
 
         if args is None:
             args = ()
@@ -171,6 +115,7 @@ class Task:
     @atomic_pipeline
     def enqueue(self, queue, *, pipeline):
         assert self.status is None
+        logger.info(f"Task {self.description} [{self.id}] enqueued")
         self.status = TaskStatus.QUEUED
         self.origin = queue.name
         self.enqueued_at = utcnow()
@@ -180,6 +125,7 @@ class Task:
     @atomic_pipeline
     def requeue(self, *, pipeline):
         assert self.status == TaskStatus.RUNNING
+        logger.info(f"Task {self.description} [{self.id}] requeued")
         redis_tasks.Queue(self.origin).push(self, at_front=True, pipeline=pipeline)
         self.status = TaskStatus.QUEUED
         self.aborted_runs.append((self.started_at, utcnow()))
@@ -189,6 +135,7 @@ class Task:
     @atomic_pipeline
     def set_running(self, worker, *, pipeline):
         assert self.status == TaskStatus.QUEUED
+        logger.info(f"Task {self.description} [{self.id}] started")
         self.status = TaskStatus.RUNNING
         self.started_at = utcnow()
         self._save(['status', 'started_at'], pipeline=pipeline)
@@ -196,6 +143,7 @@ class Task:
     @atomic_pipeline
     def set_finished(self, *, pipeline):
         assert self.status == TaskStatus.RUNNING
+        logger.info(f"Task {self.description} [{self.id}] finished")
         finished_task_registry.add(self, pipeline=pipeline)
         self.status = TaskStatus.FINISHED
         self.ended_at = utcnow()
@@ -204,6 +152,7 @@ class Task:
     @atomic_pipeline
     def set_failed(self, error_message, *, pipeline):
         assert self.status == TaskStatus.RUNNING
+        logger.info(f"Task {self.description} [{self.id}] failed")
         failed_task_registry.add(self, pipeline=pipeline)
         self.status = TaskStatus.FAILED
         self.error_message = error_message
@@ -225,6 +174,7 @@ class Task:
     @atomic_pipeline
     def handle_worker_death(self, *, pipeline):
         if self.status == TaskStatus.QUEUED:
+            logger.debug(f"Task {self.description} [{self.id}] had its worker die. Reenqueuing.")
             # The worker died while moving the task
             redis_tasks.Queue(self.origin).push(self, at_front=True, pipeline=pipeline)
         elif self.status == TaskStatus.RUNNING:
@@ -268,7 +218,8 @@ class Task:
     @classmethod
     @atomic_pipeline
     def delete_many(cls, task_ids, *, pipeline):
-        pipeline.delete(*(cls.key_for(task_id) for task_id in task_ids))
+        if task_ids:
+            pipeline.delete(*(cls.key_for(task_id) for task_id in task_ids))
 
     def refresh(self):
         key = self.key
@@ -330,7 +281,11 @@ class Task:
         try:
             def run_task(*args, **kwargs):
                     with shutdown_cm:
-                        func = self._get_func()
+                        try:
+                            func = self._get_func()
+                        except Exception as e:
+                            raise RuntimeError(
+                                f"Failed to import task function {self.func_name}") from e
                         func(*args, **kwargs)
 
             def mw_wrapper(mwc, task, run):

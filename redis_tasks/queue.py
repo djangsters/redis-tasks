@@ -17,10 +17,9 @@ class Queue(object):
     @classmethod
     def all(cls):
         """Returns an iterable of all Queues."""
-        return [cls(name) for name in queue_registry.get_names()]
+        return [cls(name) for name in sorted(queue_registry.get_names())]
 
     def count(self):
-        """Returns a count of all messages in the queue."""
         return connection.llen(self.key)
 
     def _empty_transaction(self, pipeline):
@@ -40,14 +39,14 @@ class Queue(object):
             queue_registry.remove(self, pipeline=pipeline)
         connection.transaction(transaction, self.key)
 
-    def get_task_ids(self):
-        """Return the task IDs in the queue."""
+    def get_task_ids(self, offset=0, length=-1):
+        end = -1 - offset
+        start = -(length + 1) if length < 0 else end - length
         return [task_id.decode() for task_id in
-                reversed(connection.lrange(self.key, 0, -1))]
+                reversed(connection.lrange(self.key, start, end))]
 
-    def get_tasks(self):
-        """Returns the tasks in the queue."""
-        return [Task.fetch(x) for x in self.get_task_ids()]
+    def get_tasks(self, offset=0, length=-1):
+        return [Task.fetch(x) for x in self.get_task_ids(offset, length)]
 
     @atomic_pipeline
     def enqueue_call(self, *args, pipeline, **kwargs):
@@ -109,6 +108,15 @@ class Queue(object):
         if result is None:
             return None
         return queue_map[result[0].decode()]
+
+    def __eq__(self, other):
+        if type(other) != type(self):
+            return NotImplemented
+        else:
+            return self.name == other.name
+
+    def __hash__(self):
+        return hash((self.__class__.__name__, self.name))
 
     def __repr__(self):
         return '{0}({1!r})'.format(self.__class__.__name__, self.name)

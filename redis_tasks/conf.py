@@ -3,10 +3,10 @@ import logging
 import os
 import redis
 
+from types import SimpleNamespace
 from redis_tasks import defaults
 from .utils import LazyObject, import_attribute
 
-logger = logging.getLogger(__name__)
 ENVIRONMENT_VARIABLE = "RT_SETTINGS_MODULE"
 
 
@@ -17,12 +17,11 @@ class Settings:
     def _configure_from_env(self, setting_name=None):
         settings_module = os.environ.get(ENVIRONMENT_VARIABLE)
         if not settings_module:
-            desc = f"setting {setting_name}" if setting_name else "settings"
             raise Exception(
-                f"Requested {desc}, but settings are not configured. "
+                f"redis_tasks settings are not configured. "
                 "You must either define the environment variable "
                 f"{ENVIRONMENT_VARIABLE} or call settings.configure() before "
-                "accessing settings.")
+                "accessing redis_tasks.")
 
         mod = importlib.import_module(settings_module)
         self._setup(mod)
@@ -47,6 +46,9 @@ class Settings:
         if self._initialized:
             raise RuntimeError('Settings already configured.')
         self._setup(settings)
+
+    def configure_from_dict(self, dct):
+        self.configure(SimpleNamespace(**dct))
 
 
 settings = Settings()
@@ -96,8 +98,7 @@ def connection():
 
 
 @LazyObject
-def task_middlewares():
-    # TODO: test this
+def task_middlewares():  # TODO: test
     def middleware_constructor(class_path):
         return import_attribute(class_path)()
 

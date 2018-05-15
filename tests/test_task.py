@@ -68,13 +68,13 @@ def test_state_transistions(assert_atomic, connection, time_mocker):
     # dequeue
     task = q.dequeue(w)
     assert q.get_task_ids() == []
-    assert worker_registry.get_running_task_ids() == [task.id]
+    assert worker_registry.get_running_tasks() == {w.id: task.id}
 
     # set_running
     time.step()
     with assert_atomic():
         w.start_task(task)
-    assert worker_registry.get_running_task_ids() == [task.id]
+    assert worker_registry.get_running_tasks() == {w.id: task.id}
     for t in [task, Task.fetch(task.id)]:
         assert t.status == TaskStatus.RUNNING
         assert t.started_at == time.now
@@ -83,7 +83,7 @@ def test_state_transistions(assert_atomic, connection, time_mocker):
     time.step()
     with assert_atomic():
         w.end_task(task, TaskOutcome("aborted"))
-    assert worker_registry.get_running_task_ids() == []
+    assert worker_registry.get_running_tasks() == dict()
     assert q.get_task_ids() == [task.id]
     for t in [task, Task.fetch(task.id)]:
         assert t.status == TaskStatus.QUEUED
@@ -105,11 +105,11 @@ def test_state_transistions(assert_atomic, connection, time_mocker):
     task = q.enqueue_call(stub)
     task = q.dequeue(w)
     w.start_task(task)
-    assert worker_registry.get_running_task_ids() == [task.id]
+    assert worker_registry.get_running_tasks() == {w.id: task.id}
     time.step()
     with assert_atomic():
         w.end_task(task, TaskOutcome("failure", message="my error"))
-    assert worker_registry.get_running_task_ids() == []
+    assert worker_registry.get_running_tasks() == dict()
     assert failed_task_registry.get_task_ids() == [task.id]
     for t in [task, Task.fetch(task.id)]:
         assert t.status == TaskStatus.FAILED
@@ -133,7 +133,7 @@ def test_cancel(assert_atomic, connection):
     with pytest.raises(InvalidOperation):
         with assert_atomic():
             task.cancel()
-    assert worker_registry.get_running_task_ids() == [task.id]
+    assert worker_registry.get_running_tasks() == {w.id: task.id}
     assert connection.exists(task.key)
 
 
@@ -149,34 +149,34 @@ def test_worker_death(assert_atomic, connection):
 
     # Worker died before starting work on the task
     task, w = setup(stub)
-    assert worker_registry.get_running_task_ids() == [task.id]
+    assert worker_registry.get_running_tasks() == {w.id: task.id}
     with assert_atomic(exceptions=['hgetall']):
         w.died()
     assert q.get_task_ids() == [task.id]
-    assert worker_registry.get_running_task_ids() == []
+    assert worker_registry.get_running_tasks() == dict()
     assert failed_task_registry.get_task_ids() == []
 
     # Worker died after starting non-reentrant task
     q.empty()
     task, w = setup(stub)
-    assert worker_registry.get_running_task_ids() == [task.id]
+    assert worker_registry.get_running_tasks() == {w.id: task.id}
     w.start_task(task)
     with assert_atomic(exceptions=['hgetall']):
         w.died()
     assert q.get_task_ids() == []
-    assert worker_registry.get_running_task_ids() == []
+    assert worker_registry.get_running_tasks() == dict()
     assert failed_task_registry.get_task_ids() == [task.id]
 
     # Worker died after starting reentrant task
     connection.delete(failed_task_registry.key)
     task, w = setup(reentrant_stub)
-    assert worker_registry.get_running_task_ids() == [task.id]
+    assert worker_registry.get_running_tasks() == {w.id: task.id}
     with assert_atomic():
         w.start_task(task)
     with assert_atomic(exceptions=['hgetall']):
         w.died()
     assert q.get_task_ids() == [task.id]
-    assert worker_registry.get_running_task_ids() == []
+    assert worker_registry.get_running_tasks() == dict()
     assert failed_task_registry.get_task_ids() == []
 
 

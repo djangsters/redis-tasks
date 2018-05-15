@@ -1,7 +1,3 @@
-import os
-import socket
-from types import SimpleNamespace
-
 from redis_tasks.queue import Queue
 from redis_tasks.task import Task, redis_task
 from redis_tasks.worker import Worker
