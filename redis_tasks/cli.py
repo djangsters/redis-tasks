@@ -50,9 +50,21 @@ def empty(all, delete, queues, **options):
         click.echo(f'Queue f{queue.name} emptied')
 
 
+def configure_logging(verbose, quiet, **options):
+    if verbose and quiet:
+        raise click.UsageError("flags --verbose and --quiet are mutually exclusive")
+
+    level = (verbose and 'DEBUG') or (quiet and 'WARNING') or 'INFO'
+    logging.basicConfig(level=level, style='{', datefmt='%H:%M:%S',
+                        format='{asctime} {levelname:5.5} {name:>20}: {message}')
+
+
 @main.command()
-def scheduler():
+@click.option('--verbose', '-v', is_flag=True, help='Show more output')
+@click.option('--quiet', '-q', is_flag=True, help='Show less output')
+def scheduler(**options):
     """Run the redis_tasks scheduler"""
+    configure_logging(**options)
     try:
         scheduler_main()
     except ConnectionError as e:
@@ -66,15 +78,9 @@ def scheduler():
 @click.option('--verbose', '-v', is_flag=True, help='Show more output')
 @click.option('--quiet', '-q', is_flag=True, help='Show less output')
 @click.argument('queues', nargs=-1)
-def worker(burst, description, verbose, quiet, queues, **options):
+def worker(burst, description, queues, **options):
     """Run a redis_tasks worker"""
-    if verbose and quiet:
-        raise click.UsageError("flags --verbose and --quiet are mutually exclusive")
-
-    level = (verbose and 'DEBUG') or (quiet and 'WARNING') or 'INFO'
-    logging.basicConfig(level=level, style='{', datefmt='%H:%M:%S',
-                        format='{asctime} {levelname:5.5} {name:>20}: {message}')
-
+    configure_logging(**options)
     queues = queues or ['default']
     try:
         worker_main(queues, description=description, burst=burst)
@@ -152,7 +158,7 @@ def show_workers(queues, by_queue):
     all_queues = set(Queue.all()) | {q for w in workers for q in w.queues}
     if queues:
         workers = [w for w in workers
-                   if any(set(w.queues) & queues)]
+                   if any(set(w.queues) & set(queues))]
     else:
         queues = all_queues
 
