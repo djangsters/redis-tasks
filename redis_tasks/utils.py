@@ -40,8 +40,26 @@ def enum(name, *sequential, **named):
     return type(str(name), (), values)
 
 
+def one(iterable):
+    it = iter(iterable)
+    try:
+        value = next(it)
+    except StopIteration:
+        raise ValueError('too few items in iterable (expected 1)')
+    try:
+        next(it)
+    except StopIteration:
+        return value
+    else:
+        raise ValueError('too many items in iterable (expected 1)')
+
+
 def decode_list(lst):
     return [x.decode() for x in lst]
+
+
+def decode_dict(dct):
+    return {k.decode(): v.decode() for k, v in dct.items()}
 
 
 def is_serializable(obj):
@@ -63,12 +81,6 @@ def serialize(obj):
 
 
 def deserialize(bytes_obj):
-    """Unpickles a string, but raises a unified DeserializationError in case anything fails.
-
-    This is a helper method to not have to deal with the fact that `loads()`
-    potentially raises many types of exceptions (e.g. AttributeError,
-    IndexError, TypeError, KeyError, etc.)
-    """
     try:
         obj = pickle.loads(bytes_obj)
     except Exception as e:

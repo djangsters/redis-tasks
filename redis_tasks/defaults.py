@@ -18,7 +18,7 @@ WORKER_DESCRIPTION_FUNCTION = "redis_tasks.worker_process.generate_worker_descri
 #   singleton: Boolean to specify whether this task should not be on the queue
 #              multiple times (optional, defaults to True)
 #   queue: Queue to put this task on (optional
-SCHEDULE = []
+SCHEDULE = {}
 SCHEDULER_TIMEZONE = "UTC"
 SCHEDULER_QUEUE = 'default'
 SCHEDULER_MAX_CATCHUP = 60 * 60 * 1  # 1 hour

@@ -1,6 +1,7 @@
 import os
 import copy
 import socket
+import pytz
 import signal
 import datetime
 from contextlib import contextmanager
@@ -107,6 +108,7 @@ class TimeMocker:
         self.mocker = mocker
         self.target = target
         self.now = utcnow().replace(microsecond=0)
+        self.step()
 
     def step(self, seconds=1):
         self.seq += 1
