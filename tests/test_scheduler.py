@@ -7,21 +7,11 @@ import pytest
 import pytz
 from redis_tasks import Queue
 from redis_tasks.scheduler import (
-    CrontabSchedule, Mutex, Scheduler, SchedulerEntry, crontab, localize)
+    CrontabSchedule, Mutex, PeriodicSchedule, Scheduler, SchedulerEntry,
+    crontab)
 from redis_tasks.task import TaskOutcome
 from redis_tasks.utils import one, utcnow
 from tests.utils import WorkerFactory, stub
-
-
-def test_localize(settings):
-    settings.SCHEDULER_TIMEZONE = "UTC"
-    dt = datetime.datetime(2000, 1, 1, tzinfo=pytz.utc)
-    loc = localize(dt)
-    assert loc.tzinfo.utcoffset(loc).total_seconds() == 0
-
-    settings.SCHEDULER_TIMEZONE = "Europe/Berlin"
-    loc = localize(dt)
-    assert loc.tzinfo.utcoffset(loc).total_seconds() == 60 * 60
 
 
 def iter_schedule(schedule, start, count):
@@ -55,6 +45,52 @@ def test_crontab_schedule(settings):
         tz.localize(datetime.datetime(2017, 10, 29, 2, 30), is_dst=True),
         tz.localize(datetime.datetime(2017, 10, 30, 2, 30), is_dst=False),
         tz.localize(datetime.datetime(2017, 10, 31, 2, 30)),
+    ]
+
+
+def test_periodic_schedule(settings):
+    settings.SCHEDULER_TIMEZONE = "Europe/Berlin"
+    tz = pytz.timezone('Europe/Berlin')
+
+    # Test transition to DST
+    schedule = PeriodicSchedule(minutes=90, start_at="01:00")
+    start = tz.localize(datetime.datetime(2017, 3, 26))
+    assert list(dt.astimezone(tz) for dt in iter_schedule(schedule, start, 6)) == [
+        tz.localize(dt, is_dst=None) for dt in [
+            datetime.datetime(2017, 3, 26, 1, 0),
+            datetime.datetime(2017, 3, 26, 3, 30),
+            datetime.datetime(2017, 3, 26, 5, 0),
+            datetime.datetime(2017, 3, 26, 6, 30),
+            datetime.datetime(2017, 3, 26, 8, 0),
+            datetime.datetime(2017, 3, 26, 9, 30),
+        ]]
+
+    # Test night-wrap
+    schedule = PeriodicSchedule(minutes=17, start_at="23:00")
+    start = tz.localize(datetime.datetime(2017, 4, 1, 22))
+    assert list(dt.astimezone(tz) for dt in iter_schedule(schedule, start, 6)) == [
+        tz.localize(dt, is_dst=None) for dt in [
+            datetime.datetime(2017, 4, 1, 23, 00),
+            datetime.datetime(2017, 4, 1, 23, 17),
+            datetime.datetime(2017, 4, 1, 23, 34),
+            datetime.datetime(2017, 4, 1, 23, 51),
+            datetime.datetime(2017, 4, 2, 23, 00),
+            datetime.datetime(2017, 4, 2, 23, 17),
+        ]]
+
+    assert (schedule.get_next(tz.localize(datetime.datetime(2017, 4, 1, 23, 10))) ==
+            tz.localize(datetime.datetime(2017, 4, 1, 23, 17)))
+
+    # Test transition from DST
+    schedule = PeriodicSchedule(minutes=40, start_at="01:00")
+    start = tz.localize(datetime.datetime(2017, 10, 29, 0))
+    assert list(dt.astimezone(tz) for dt in iter_schedule(schedule, start, 6)) == [
+        tz.localize(datetime.datetime(2017, 10, 29, 1, 00)),
+        tz.localize(datetime.datetime(2017, 10, 29, 1, 40), is_dst=True),
+        tz.localize(datetime.datetime(2017, 10, 29, 2, 20), is_dst=True),
+        tz.localize(datetime.datetime(2017, 10, 29, 2, 00), is_dst=False),
+        tz.localize(datetime.datetime(2017, 10, 29, 2, 40), is_dst=False),
+        tz.localize(datetime.datetime(2017, 10, 29, 3, 20)),
     ]
 
 

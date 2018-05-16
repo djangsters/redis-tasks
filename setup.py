@@ -22,7 +22,7 @@ setup(
     zip_safe=False,
     platforms='any',
     python_requires='>=3.6.0',
-    install_requires=['redis >= 2.10.0', 'click', 'croniter'],
+    install_requires=['redis >= 2.10.0', 'click', 'croniter', 'pytz'],
     entry_points={
         'console_scripts': [
             'redis_tasks = redis_tasks.cli:main',

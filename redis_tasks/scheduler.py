@@ -1,37 +1,33 @@
 import datetime
-import threading
-import signal
 import logging
+import random
+import signal
+import threading
 import time
 import uuid
 from contextlib import suppress
+from numbers import Number
 from operator import attrgetter
 
 import croniter
+import pytz
 
 from .conf import RedisKey, connection, settings
 from .exceptions import TaskDoesNotExist
 from .queue import Queue
 from .task import Task, TaskStatus
-from .utils import atomic_pipeline, utcformat, utcnow, utcparse, decode_dict
+from .utils import atomic_pipeline, decode_dict, utcformat, utcnow, utcparse, LazyObject
 
 logger = logging.getLogger(__name__)
 
-
-try:
-    import pytz
-except ImportError:
-    pytz = False
-timezone = None
+_local_tz = None
 
 
-def localize(dt):
-    global timezone
-    if settings.SCHEDULER_TIMEZONE.upper() == "UTC":
-        return dt
-    if not timezone:
-        timezone = pytz.timezone(settings.SCHEDULER_TIMEZONE)
-    return dt.astimezone(timezone)
+def local_tz():
+    global _local_tz
+    if not _local_tz:
+        _local_tz = pytz.timezone(settings.SCHEDULER_TIMEZONE)
+    return _local_tz
 
 
 class CrontabSchedule:
@@ -39,12 +35,54 @@ class CrontabSchedule:
         self.crontab = crontab
 
     def get_next(self, after):
-        after = localize(after)
+        after = after.astimezone(local_tz())
         iter = croniter.croniter(self.crontab, after, ret_type=datetime.datetime)
-        return iter.get_next().astimezone(datetime.timezone.utc)
+        return iter.get_next().astimezone(pytz.utc)
 
 
 crontab = CrontabSchedule
+
+
+def once_per_day(time_str):
+    hour, minute = time_str.split(':')
+    return CrontabSchedule(f'{minute} {hour} * * *')
+
+
+class PeriodicSchedule:
+    def __init__(self, *, hours=0, minutes=0, seconds=0, start_at=None):
+        self.interval = hours * 60 * 60 + minutes * 60 + seconds
+        if start_at is None:
+            start_at = random.uniform(0, self.interval)
+        elif isinstance(start_at, str):
+            hours, minutes = start_at.split(':')
+            start_at = int(hours) * 60 * 60 + int(minutes) * 60
+        self.start_at = start_at
+        assert self.interval < 12 * 60 * 60
+        assert self.start_at < 24 * 60 * 60
+
+    def get_next(self, after):
+        after = after.astimezone(local_tz())
+        midnight = local_tz().localize(
+            after.replace(hour=0, minute=0, second=0, microsecond=0, tzinfo=None),
+            is_dst=True)
+        after_time = (after - midnight).total_seconds()
+        if self.start_at > after_time:
+            next_time = self.start_at
+        else:
+            since_start = after_time - self.start_at
+            remaining = self.interval - since_start % self.interval
+            next_time = after_time + remaining
+
+        next = local_tz().normalize(midnight + datetime.timedelta(seconds=next_time))
+        if next.day != after.day:
+            midnight = local_tz().localize(
+                after.replace(hour=23, minute=59, second=59, microsecond=0, tzinfo=None),
+                is_dst=False) + datetime.timedelta(seconds=1)
+            next = midnight + datetime.timedelta(seconds=self.start_at)
+        return next.astimezone(datetime.timezone.utc)
+
+
+run_every = PeriodicSchedule
 
 
 class SchedulerEntry:
@@ -132,9 +170,6 @@ class Scheduler:
         if not self.schedule:
             logger.error("No schedule configured, nothing to do")
             return
-
-        if settings.SCHEDULER_TIMEZONE and pytz is False:
-            raise RuntimeError("redis_tasks requires pytz for timezone support")
 
         self.setup_signal_handler()
 
