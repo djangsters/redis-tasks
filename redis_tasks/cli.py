@@ -9,7 +9,7 @@ from operator import attrgetter
 import click
 from redis.exceptions import ConnectionError
 
-from redis_tasks import VERSION, scheduler_main, worker_main
+from redis_tasks import __version__, scheduler_main, worker_main
 from redis_tasks.queue import Queue
 from redis_tasks.worker import Worker, WorkerState
 
@@ -19,7 +19,7 @@ yellow = partial(click.style, fg='yellow')
 
 
 @click.group()
-@click.version_option(VERSION)
+@click.version_option(__version__)
 def main():
     """redis_tasks command line tool"""
     pass
