@@ -100,7 +100,7 @@ def connection():
 @LazyObject
 def task_middlewares():  # TODO: test
     def middleware_constructor(class_path):
-        return import_attribute(class_path)()
+        return import_attribute(class_path)
 
     return [middleware_constructor(x) for x in settings.TASK_MIDDLEWARES]
 

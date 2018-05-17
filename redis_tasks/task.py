@@ -280,13 +280,13 @@ class Task:
         exc_info = (None, None, None)
         try:
             def run_task(*args, **kwargs):
-                    with shutdown_cm:
-                        try:
-                            func = self._get_func()
-                        except Exception as e:
-                            raise RuntimeError(
-                                f"Failed to import task function {self.func_name}") from e
-                        func(*args, **kwargs)
+                with shutdown_cm:
+                    try:
+                        func = self._get_func()
+                    except Exception as e:
+                        raise RuntimeError(
+                            f"Failed to import task function {self.func_name}") from e
+                    func(*args, **kwargs)
 
             def mw_wrapper(mwc, task, run):
                 return lambda *args, **kwargs: mwc().run_task(task, run, args, kwargs)

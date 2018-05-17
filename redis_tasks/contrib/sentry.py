@@ -1,39 +1,52 @@
-from ..worker import TaskMiddleware
 from ..exceptions import TaskAborted
 from ..conf import settings
-from ..utils import import_attribute
+from ..utils import import_attribute, LazyObject
 from contextlib import contextmanager
+from raven.transport.threaded import ThreadedHTTPTransport
+
+sentry = LazyObject(lambda: import_attribute(settings.SENTRY_INSTANCE))
 
 
-class SentryMiddleware(TaskMiddleware):
-    def __init__(self):
-        self.client = import_attribute(settings.SENTRY_INSTANCE)
+def set_client(client):
+    global sentry
+    sentry = client
 
+
+class SentryMiddleware:
     @contextmanager
     def context(self, task):
-        self.client.context.activate()
-        self.client.context.merge({'extra': {
+        sentry.context.activate()
+        sentry.context.merge({'extra': {
             'task_id': task.id,
             'task_func': task.func_name,
             'task_args': task.args,
             'task_kwargs': task.kwargs,
             'task_description': task.description,
         }})
-        self.client.transaction.push(task.func_name)
+        sentry.transaction.push(task.func_name)
         try:
             yield
         finally:
-            self.client.transaction.pop(task.func_name)
-            self.client.context.clear()
+            sentry.transaction.pop(task.func_name)
+            sentry.context.clear()
 
     def run_task(self, task, run, args, kwargs):
         with self.context(task):
             run(*args, **kwargs)
 
     def process_outcome(self, task, *exc_info):
-        if not exc_info[0]:
-            return
-        if isinstance(exc_info[1], TaskAborted) and task.is_reentrant:
-            return
-        with self.context(task):
-            self.client.captureException(exc_info=exc_info)
+        try:
+            if not exc_info[0]:
+                return
+            if isinstance(exc_info[1], TaskAborted) and task.is_reentrant:
+                return
+            with self.context(task):
+                sentry.captureException(exc_info=exc_info)
+        finally:
+            self.wait_for_messages()
+
+    def wait_for_messages(self):
+        transport = sentry.remote.get_transport()
+        if isinstance(transport, ThreadedHTTPTransport):
+            worker = transport.get_worker()
+            worker._timed_queue_join(10)
