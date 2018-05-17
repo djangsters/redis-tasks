@@ -1,6 +1,8 @@
-from redis_tasks.smear_dst import DstSmearingTz
-import pytz
 import datetime
+
+import pytz
+
+from redis_tasks.smear_dst import DstSmearingTz
 
 
 def test_utc():

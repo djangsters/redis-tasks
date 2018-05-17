@@ -1,9 +1,9 @@
-from collections import namedtuple
-from pytz.tzinfo import DstTzInfo
 import bisect
 import datetime
-import pytz
+from collections import namedtuple
 
+import pytz
+from pytz.tzinfo import DstTzInfo
 
 Transition = namedtuple('Transition', [
     'start', 'end',

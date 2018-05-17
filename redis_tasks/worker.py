@@ -1,5 +1,4 @@
 import logging
-
 from operator import attrgetter
 
 from .conf import RedisKey, connection, settings

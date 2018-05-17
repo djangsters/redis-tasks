@@ -1,14 +1,14 @@
 import multiprocessing
-import time
-import signal
 import os
+import signal
+import time
 
 import pytest
 
-from redis_tasks.task import Task, TaskOutcome, TaskStatus
-from redis_tasks.utils import decode_list
 from redis_tasks.exceptions import WorkerShutdown
-from redis_tasks.worker import Worker, WorkerState
+from redis_tasks.task import TaskOutcome, TaskStatus
+from redis_tasks.utils import decode_list
+from redis_tasks.worker import WorkerState
 from redis_tasks.worker_process import (
     ShutdownRequested, WorkerProcess, WorkHorse, generate_worker_description)
 from tests.utils import (
@@ -86,7 +86,8 @@ def test_run(settings, mocker):
     def my_process(task):
         assert wp.worker.state == WorkerState.IDLE
 
-    process = mocker.patch('redis_tasks.worker_process.WorkerProcess.process_task', side_effect=my_process)
+    process = mocker.patch('redis_tasks.worker_process.WorkerProcess.process_task',
+                           side_effect=my_process)
     maintenance = mocker.patch('redis_tasks.worker_process.Maintenance')
     wp = WorkerProcess([QueueFactory()])
     assert wp.run(True) == 3

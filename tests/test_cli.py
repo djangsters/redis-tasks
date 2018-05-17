@@ -1,7 +1,8 @@
-import pytest
 import click
-from tests.utils import stub, QueueFactory, WorkerFactory
+import pytest
+
 from redis_tasks.queue import Queue
+from tests.utils import QueueFactory, WorkerFactory, stub
 
 
 @pytest.fixture

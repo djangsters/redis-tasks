@@ -3,15 +3,17 @@ import sys
 import traceback
 import uuid
 from contextlib import ExitStack
-from functools import partial
 
 import redis_tasks
+
 from .conf import RedisKey, connection, settings, task_middlewares
-from .exceptions import (InvalidOperation, TaskDoesNotExist, TaskAborted,
-                         WorkerDied, WorkerShutdown)
+from .exceptions import (
+    InvalidOperation, TaskAborted, TaskDoesNotExist, WorkerDied,
+    WorkerShutdown)
 from .registries import failed_task_registry, finished_task_registry
-from .utils import (atomic_pipeline, deserialize, enum, generate_callstring,
-                    import_attribute, serialize, utcformat, utcnow, utcparse, LazyObject)
+from .utils import (
+    LazyObject, atomic_pipeline, deserialize, enum, generate_callstring,
+    import_attribute, serialize, utcformat, utcnow, utcparse)
 
 logger = logging.getLogger(__name__)
 

@@ -1,7 +1,8 @@
 import redis_tasks
+
+from .conf import RedisKey, connection, settings
 from .exceptions import WorkerDoesNotExist
 from .utils import atomic_pipeline, decode_list
-from .conf import connection, settings, RedisKey
 
 
 class ExpiringRegistry:

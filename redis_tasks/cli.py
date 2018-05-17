@@ -8,7 +8,8 @@ from operator import attrgetter
 
 import click
 from redis.exceptions import ConnectionError
-from redis_tasks import VERSION, worker_main, scheduler_main
+
+from redis_tasks import VERSION, scheduler_main, worker_main
 from redis_tasks.queue import Queue
 from redis_tasks.worker import Worker, WorkerState
 

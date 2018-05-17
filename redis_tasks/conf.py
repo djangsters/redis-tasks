@@ -1,10 +1,11 @@
 import importlib
-import logging
 import os
+from types import SimpleNamespace
+
 import redis
 
-from types import SimpleNamespace
 from redis_tasks import defaults
+
 from .utils import LazyObject, import_attribute
 
 ENVIRONMENT_VARIABLE = "RT_SETTINGS_MODULE"

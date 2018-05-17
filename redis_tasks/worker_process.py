@@ -2,13 +2,13 @@ import logging
 import multiprocessing
 import os
 import signal
-import threading
 import socket
 import sys
+import threading
 import traceback
 import uuid
-from contextlib import contextmanager
 from contextlib import ExitStack as nullcontext
+from contextlib import contextmanager
 from datetime import timedelta
 
 from .conf import RedisKey, connection, settings, task_middlewares
@@ -16,7 +16,7 @@ from .exceptions import WorkerShutdown
 from .queue import Queue
 from .registries import registry_maintenance
 from .task import TaskOutcome
-from .utils import import_attribute, utcnow, utcparse, utcformat
+from .utils import import_attribute, utcformat, utcnow, utcparse
 from .worker import Worker
 
 logger = logging.getLogger('redis_tasks.worker')

@@ -3,9 +3,9 @@ from contextlib import contextmanager
 
 import pytest
 
+from redis_tasks.exceptions import TaskAborted, WorkerShutdown
 from redis_tasks.task import Task
-from redis_tasks.exceptions import WorkerShutdown, TaskAborted
-from tests.utils import stub, Something, mock_func_proxy
+from tests.utils import Something, mock_func_proxy, stub
 
 
 def test_successful_execute(mocker):

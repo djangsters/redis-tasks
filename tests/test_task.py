@@ -5,8 +5,8 @@ import uuid
 import pytest
 
 from redis_tasks.exceptions import InvalidOperation, TaskDoesNotExist
-from redis_tasks.registries import (failed_task_registry, finished_task_registry,
-                           worker_registry)
+from redis_tasks.registries import (
+    failed_task_registry, finished_task_registry, worker_registry)
 from redis_tasks.task import Task, TaskOutcome, TaskStatus, redis_task
 from redis_tasks.utils import decode_list
 from tests.utils import QueueFactory, WorkerFactory, reentrant_stub, stub

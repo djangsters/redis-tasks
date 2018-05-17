@@ -1,14 +1,13 @@
 import multiprocessing
 import os
 import signal
-import socket
 
 import pytest
 
 from redis_tasks.exceptions import WorkerShutdown
-from redis_tasks.task import Task, TaskOutcome
+from redis_tasks.task import Task
 from redis_tasks.worker_process import PostponeShutdown, WorkHorse
-from tests.utils import TaskFactory, stub
+from tests.utils import TaskFactory
 
 
 def test_postpone_shutdown():

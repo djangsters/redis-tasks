@@ -3,21 +3,12 @@ language: python
 services:
   - redis
 python:
-  - "2.6"
-  - "2.7"
-  - "3.3"
-  - "3.4"
-  - "3.5"
   - "3.6"
-  - "3.6-dev"
-  - "pypy"
 install:
-  - if [[ $TRAVIS_PYTHON_VERSION == 2.6 ]]; then pip install -r py26-requirements.txt; fi
   - pip install -e .
-  - pip install pytest-cov
-  - pip install coveralls
-  #- pip install pytest  # installed by Travis by default already
+  - pip install pytest pytest-cov coveralls pytest-mock flake8 flake8-isort
 script:
+  - flake8 .
   - RUN_SLOW_TESTS_TOO=1 py.test --cov rq --durations=5
 after_success:
   - coveralls

@@ -1,14 +1,13 @@
-from threading import Thread
 import time
 from concurrent import futures
 
 import pytest
 
-from tests.utils import TaskFactory, WorkerFactory, QueueFactory, stub, id_list
-from redis_tasks.registries import queue_registry
 from redis_tasks.exceptions import TaskDoesNotExist
 from redis_tasks.queue import Queue
+from redis_tasks.registries import queue_registry
 from redis_tasks.task import Task
+from tests.utils import TaskFactory, WorkerFactory, id_list, stub
 
 
 def test_queue_basics(assert_atomic):

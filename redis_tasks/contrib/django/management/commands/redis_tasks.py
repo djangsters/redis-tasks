@@ -1,6 +1,8 @@
 import os.path
-from redis_tasks.cli import main as cli_main
+
 import click
+
+from redis_tasks.cli import main as cli_main
 
 
 class Command:

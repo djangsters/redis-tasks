@@ -1,7 +1,6 @@
 import pytest
 
-from redis_tasks import utils
-from redis_tasks import exceptions
+from redis_tasks import exceptions, utils
 
 
 def test_import_attribute():

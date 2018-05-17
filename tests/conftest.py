@@ -1,15 +1,12 @@
-import os
 import copy
-import socket
-import pytz
-import signal
 import datetime
+import multiprocessing
+import os
+import signal
 from contextlib import contextmanager
 from unittest import mock
-import multiprocessing
 
 import pytest
-import redis
 
 from redis_tasks import conf
 

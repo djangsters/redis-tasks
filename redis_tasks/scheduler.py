@@ -6,18 +6,16 @@ import threading
 import time
 import uuid
 from contextlib import suppress
-from numbers import Number
-from operator import attrgetter
 
 import croniter
-import pytz
 
 from .conf import RedisKey, connection, settings
 from .exceptions import TaskDoesNotExist
 from .queue import Queue
-from .task import Task, TaskStatus
-from .utils import atomic_pipeline, decode_dict, utcformat, utcnow, utcparse, LazyObject
 from .smear_dst import DstSmearingTz
+from .task import Task, TaskStatus
+from .utils import (
+    LazyObject, atomic_pipeline, decode_dict, utcformat, utcnow, utcparse)
 
 logger = logging.getLogger(__name__)
 

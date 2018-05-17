@@ -1,6 +1,8 @@
-from redis_tasks.worker_process import Maintenance
-import pytest
 import time
+
+import pytest
+
+from redis_tasks.worker_process import Maintenance
 
 
 @pytest.mark.skip

@@ -1,15 +1,15 @@
-import uuid
-import random
 import datetime
+import random
+import uuid
 
 import pytest
 
-from redis_tasks.worker import Worker, WorkerState
-from redis_tasks.utils import decode_list
 from redis_tasks.exceptions import WorkerDoesNotExist
-from tests.utils import QueueFactory, TaskFactory, stub, id_list
+from redis_tasks.registries import failed_task_registry, worker_registry
 from redis_tasks.task import TaskOutcome
-from redis_tasks.registries import worker_registry, failed_task_registry
+from redis_tasks.utils import decode_list
+from redis_tasks.worker import Worker, WorkerState
+from tests.utils import QueueFactory, id_list, stub
 
 
 def test_state_transitions(time_mocker, connection, assert_atomic):

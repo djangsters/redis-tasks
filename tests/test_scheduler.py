@@ -3,12 +3,11 @@ import time
 from concurrent import futures
 
 import pytest
-
 import pytz
+
 from redis_tasks import Queue
 from redis_tasks.scheduler import (
-    CrontabSchedule, Mutex, PeriodicSchedule, Scheduler, SchedulerEntry,
-    crontab)
+    CrontabSchedule, Mutex, PeriodicSchedule, Scheduler, SchedulerEntry)
 from redis_tasks.task import TaskOutcome
 from redis_tasks.utils import one, utcnow
 from tests.utils import WorkerFactory, stub

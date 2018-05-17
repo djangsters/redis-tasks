@@ -1,8 +1,10 @@
-from ..exceptions import TaskAborted
-from ..conf import settings
-from ..utils import import_attribute, LazyObject
 from contextlib import contextmanager
+
 from raven.transport.threaded import ThreadedHTTPTransport
+
+from ..conf import settings
+from ..exceptions import TaskAborted
+from ..utils import LazyObject, import_attribute
 
 sentry = LazyObject(lambda: import_attribute(settings.SENTRY_INSTANCE))
 
