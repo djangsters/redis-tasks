@@ -12,17 +12,17 @@ def get_version():
 
 
 setup(
-    name='redis_tasks',
+    name='redis-tasks',
     version=get_version(),
-    url='https://github.com/chronial/redis_tasks/',
+    url='https://github.com/djangsters/redis-tasks/',
     author='Christian Fersch',
-    author_email='chronial@visiondesigns.de',
-    description='redis_tasks is a lightweight library for processing background tasks',
+    author_email='christian@djangsters.de',
+    description='redis-tasks is a lightweight library for processing background tasks',
     packages=find_packages(exclude=['tests']),
     include_package_data=True,
     zip_safe=False,
     platforms='any',
-    python_requires='>=3.6.0',
+    python_requires='>=3.6',
     install_requires=['redis >= 2.10.0', 'click', 'croniter', 'pytz'],
     entry_points={
         'console_scripts': [
@@ -38,6 +38,6 @@ setup(
         'License :: OSI Approved :: BSD License',
         'Operating System :: POSIX',
         'Programming Language :: Python :: 3',
-
+        'Programming Language :: Python :: 3.6',
     ]
 )
