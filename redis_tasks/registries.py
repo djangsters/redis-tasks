@@ -101,7 +101,7 @@ class WorkerRegistry:
 
     def handle_died_workers(self):  # TODO: Test
         from redis_tasks.worker import Worker
-        died_worker_ids = worker_registry.get_dead_ids()
+        died_worker_ids = self.get_dead_ids()
         for worker_id in died_worker_ids:
             worker = Worker.fetch(worker_id)
             worker.died()

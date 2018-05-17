@@ -17,17 +17,11 @@ from .exceptions import TaskDoesNotExist
 from .queue import Queue
 from .task import Task, TaskStatus
 from .utils import atomic_pipeline, decode_dict, utcformat, utcnow, utcparse, LazyObject
+from .smear_dst import DstSmearingTz
 
 logger = logging.getLogger(__name__)
 
-_local_tz = None
-
-
-def local_tz():
-    global _local_tz
-    if not _local_tz:
-        _local_tz = pytz.timezone(settings.SCHEDULER_TIMEZONE)
-    return _local_tz
+local_tz = LazyObject(lambda: DstSmearingTz(settings.SCHEDULER_TIMEZONE))
 
 
 class CrontabSchedule:
@@ -35,9 +29,9 @@ class CrontabSchedule:
         self.crontab = crontab
 
     def get_next(self, after):
-        after = after.astimezone(local_tz())
+        after = local_tz.from_utc(after)
         iter = croniter.croniter(self.crontab, after, ret_type=datetime.datetime)
-        return iter.get_next().astimezone(pytz.utc)
+        return local_tz.to_utc(iter.get_next())
 
 
 crontab = CrontabSchedule
@@ -61,8 +55,8 @@ class PeriodicSchedule:
         assert self.start_at < 24 * 60 * 60
 
     def get_next(self, after):
-        after = after.astimezone(local_tz())
-        midnight = local_tz().localize(
+        after = after.astimezone(local_tz.tz)
+        midnight = local_tz.tz.localize(
             after.replace(hour=0, minute=0, second=0, microsecond=0, tzinfo=None),
             is_dst=True)
         after_time = (after - midnight).total_seconds()
@@ -73,9 +67,9 @@ class PeriodicSchedule:
             remaining = self.interval - since_start % self.interval
             next_time = after_time + remaining
 
-        next = local_tz().normalize(midnight + datetime.timedelta(seconds=next_time))
+        next = local_tz.tz.normalize(midnight + datetime.timedelta(seconds=next_time))
         if next.day != after.day:
-            midnight = local_tz().localize(
+            midnight = local_tz.tz.localize(
                 after.replace(hour=23, minute=59, second=59, microsecond=0, tzinfo=None),
                 is_dst=False) + datetime.timedelta(seconds=1)
             next = midnight + datetime.timedelta(seconds=self.start_at)

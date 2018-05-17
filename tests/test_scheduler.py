@@ -25,15 +25,12 @@ def test_crontab_schedule(settings):
     tz = pytz.timezone('Europe/Berlin')
     schedule = CrontabSchedule('30 2 * * *')
     start = datetime.datetime(2017, 3, 24, tzinfo=pytz.utc)
-    assert list(dt.astimezone(tz) for dt in iter_schedule(schedule, start, 6)) == [
+    assert list(dt.astimezone(tz) for dt in iter_schedule(schedule, start, 5)) == [
         tz.localize(dt, is_dst=None) for dt in [
             datetime.datetime(2017, 3, 24, 2, 30),
             datetime.datetime(2017, 3, 25, 2, 30),
-            # This is a bug in croniter – we want should handle dst transitions better
-            # We probably should smear the dst transition
-            datetime.datetime(2017, 3, 26, 1, 30),
-            datetime.datetime(2017, 3, 26, 3, 30),
-
+            # DST Transition
+            datetime.datetime(2017, 3, 26, 3, 0),
             datetime.datetime(2017, 3, 27, 2, 30),
             datetime.datetime(2017, 3, 28, 2, 30),
         ]]
@@ -42,7 +39,7 @@ def test_crontab_schedule(settings):
     assert list(dt.astimezone(tz) for dt in iter_schedule(schedule, start, 5)) == [
         tz.localize(datetime.datetime(2017, 10, 27, 2, 30)),
         tz.localize(datetime.datetime(2017, 10, 28, 2, 30), is_dst=True),
-        tz.localize(datetime.datetime(2017, 10, 29, 2, 30), is_dst=True),
+        tz.localize(datetime.datetime(2017, 10, 29, 2, 0), is_dst=False),
         tz.localize(datetime.datetime(2017, 10, 30, 2, 30), is_dst=False),
         tz.localize(datetime.datetime(2017, 10, 31, 2, 30)),
     ]
