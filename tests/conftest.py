@@ -13,6 +13,17 @@ from redis_tasks import conf
 os.environ[conf.ENVIRONMENT_VARIABLE] = 'tests.app.settings'
 
 
+def pytest_addoption(parser):
+    parser.addoption("--run-slow", action="store_true", help="run slow tests")
+
+
+@pytest.hookimpl(tryfirst=True)
+def pytest_runtest_setup(item):
+    if not pytest.config.getoption("--run-slow"):
+        if item.keywords.get('slow'):
+            pytest.skip("Test is marked as slow")
+
+
 def pytest_unconfigure(config):
     do_clear_redis()
 

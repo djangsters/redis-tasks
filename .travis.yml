@@ -8,7 +8,7 @@ install:
   - pip install -e .
   - pip install pytest pytest-cov coveralls pytest-mock flake8 flake8-isort
 script:
+  - pytest --cov redis_tasks --run-slow
   - flake8 .
-  - RUN_SLOW_TESTS_TOO=1 py.test --cov rq --durations=5
 after_success:
   - coveralls

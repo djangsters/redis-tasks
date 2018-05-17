@@ -275,7 +275,7 @@ class TestMutex:
             m.extend()
         assert not caplog.records
 
-    @pytest.mark.skip
+    @pytest.mark.slow
     def test_blocked(self, caplog):
         with Mutex(timeout=3):
             with pytest.raises(RuntimeError):
@@ -283,13 +283,13 @@ class TestMutex:
                     pass
         assert 'already running' in one(caplog.records).message
 
-    @pytest.mark.skip
+    @pytest.mark.slow
     def test_unblocked(self, caplog):
         with Mutex(timeout=0.01):
             with Mutex(timeout=0.01):
                 assert 'already running' in one(caplog.records).message
 
-    @pytest.mark.skip
+    @pytest.mark.slow
     def test_extend(self):
         with Mutex(timeout=0.02) as m:
             time.sleep(0.01)

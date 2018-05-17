@@ -197,6 +197,6 @@ def test_await_multi():
     assert Queue.await_multi([q1, q2], 1).name == q1.name
 
 
-@pytest.mark.skip
+@pytest.mark.slow
 def test_queue_await_multi_empty():
     assert Queue.await_multi([Queue()], 1) is None

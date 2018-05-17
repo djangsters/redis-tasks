@@ -5,7 +5,7 @@ import pytest
 from redis_tasks.worker_process import Maintenance
 
 
-@pytest.mark.skip
+@pytest.mark.slow
 def test_run_if_necessary(mocker, settings):
     settings.MAINTENANCE_FREQ = 2
     maintenance = Maintenance()
