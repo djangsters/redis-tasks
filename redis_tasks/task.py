@@ -1,5 +1,6 @@
 import logging
 import sys
+import threading
 import traceback
 import uuid
 from contextlib import ExitStack
@@ -35,6 +36,32 @@ def redis_task(*args, **kwargs):
         return f
 
     return decorator
+
+
+class TaskStack():
+    def __init__(self):
+        self.local = threading.local()
+
+    def push(self, task):
+        stack = getattr(self.local, "stack", [])
+        stack.append(task)
+        self.local.stack = stack
+
+    def pop(self):
+        return self.local.stack.pop()
+
+    def peek(self):
+        stack = getattr(self.local, "stack", [])
+        if not stack:
+            return None
+        return stack[-1]
+
+
+task_stack = TaskStack()
+
+
+def get_current_task():
+    task_stack.peek()
 
 
 class TaskProperties:
@@ -279,6 +306,7 @@ class Task:
         of the execution in which `WorkerShutdown` is allowed to be raised.
 
         Returns a TaskOutcome."""
+        task_stack.push(self)
         exc_info = (None, None, None)
         try:
             def run_task(*args, **kwargs):
@@ -302,6 +330,8 @@ class Task:
                 raise TaskAborted("Worker shutdown") from e
         except Exception:
             exc_info = sys.exc_info()
+        finally:
+            task_stack.pop()
 
         return self._generate_outcome(*exc_info)
 
