@@ -134,7 +134,7 @@ class SchedulerEntry:
         if self.prev_task_id:
             with suppress(TaskDoesNotExist):
                 prev_task = Task.fetch(self.prev_task_id)
-                if not prev_task.concluded:
+                if prev_task.status not in [TaskStatus.FINISHED, TaskStatus.FAILED]:
                     return True
         return False
 

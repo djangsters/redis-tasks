@@ -3,7 +3,6 @@ from contextlib import contextmanager
 from raven.transport.threaded import ThreadedHTTPTransport
 
 from ..conf import settings
-from ..exceptions import TaskAborted
 from ..utils import LazyObject, import_attribute
 
 sentry = LazyObject(lambda: import_attribute(settings.SENTRY_INSTANCE))
@@ -39,8 +38,6 @@ class SentryMiddleware:
     def process_outcome(self, task, *exc_info):
         try:
             if not exc_info[0]:
-                return
-            if isinstance(exc_info[1], TaskAborted) and task.is_reentrant:
                 return
             with self.context(task):
                 sentry.captureException(exc_info=exc_info)

@@ -82,7 +82,7 @@ def test_state_transistions(assert_atomic, connection, time_mocker):
     # requeue
     time.step()
     with assert_atomic():
-        w.end_task(task, TaskOutcome("aborted"))
+        w.end_task(task, TaskOutcome("requeue"))
     assert worker_registry.get_running_tasks() == dict()
     assert q.get_task_ids() == [task.id]
     for t in [task, Task.fetch(task.id)]:

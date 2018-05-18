@@ -36,8 +36,8 @@ def test_aborted_execute(mocker):
     task = Task(mock_func_proxy)
     outcome = task.execute()
     assert func.called_once_with()
-    assert outcome.outcome == 'aborted'
-    assert outcome.message == 'Worker shutdown'
+    assert outcome.outcome == 'failure'
+    assert outcome.message.splitlines()[-1] == 'redis_tasks.exceptions.TaskAborted: Worker shutdown'
 
 
 def test_broken_task():
@@ -59,8 +59,8 @@ def test_shutdown_cm(mocker):
     task = Task(mock_func_proxy)
     outcome = task.execute(shutdown_cm=entry_shutdown_cm())
     assert not func.called
-    assert outcome.outcome == 'aborted'
-    assert outcome.message == 'Worker shutdown'
+    assert outcome.outcome == 'failure'
+    assert 'Worker shutdown' in outcome.message.splitlines()[-1]
 
     @contextmanager
     def exit_shutdown_cm():
@@ -70,8 +70,8 @@ def test_shutdown_cm(mocker):
     func.reset_mock()
     outcome = task.execute(shutdown_cm=exit_shutdown_cm())
     assert func.called_once_with()
-    assert outcome.outcome == 'aborted'
-    assert outcome.message == 'Worker shutdown'
+    assert outcome.outcome == 'failure'
+    assert 'Worker shutdown' in outcome.message.splitlines()[-1]
 
     in_cm = False
 
@@ -103,8 +103,8 @@ def test_generate_outcome():
     assert 'mytest' in outcome.message
 
     outcome = task._generate_outcome(TaskAborted, TaskAborted("a message"), None)
-    assert outcome.outcome == 'aborted'
-    assert outcome.message == 'a message'
+    assert outcome.outcome == 'failure'
+    assert outcome.message == 'redis_tasks.exceptions.TaskAborted: a message\n'
 
 
 class CMCheckMiddleware:
@@ -234,15 +234,15 @@ def test_outcome_middlewares(mocker, SpyMiddleware):
     mocker.patch('redis_tasks.task.task_middlewares', new=spies)
     spies[2].outcome = True
     spies[1].outcome = ArithmeticError()
-    spies[0].outcome = TaskAborted("fake abort")
+    spies[0].outcome = None
     sentinel = mocker.sentinel.error
     outcome = task._generate_outcome(None, sentinel, None)
     assert SpyMiddleware.history == [
         (spies[2], 'process_outcome', (task, None, sentinel, None)),
         (spies[1], 'process_outcome', (task, None, None, None)),
         (spies[0], 'process_outcome', (task, ArithmeticError, spies[1].outcome, Something))]
-    assert outcome.outcome == 'aborted'
-    assert outcome.message == 'fake abort'
+    assert outcome.outcome == 'failure'
+    assert outcome.message.splitlines()[-1] == 'ArithmeticError'
 
 
 def test_middleware_constructor_exception(SpyMiddleware, mocker):

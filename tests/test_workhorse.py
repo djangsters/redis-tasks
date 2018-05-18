@@ -118,5 +118,5 @@ def test_process_shutdown(suprocess_socket):
     assert horse_conn.poll()
     outcome = horse_conn.recv()
     assert not horse_conn.poll()
-    assert outcome.outcome == 'aborted'
-    assert outcome.message == 'Worker shutdown'
+    assert outcome.outcome == 'failure'
+    assert 'Worker shutdown' in outcome.message.splitlines()[-1]

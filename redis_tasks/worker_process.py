@@ -173,11 +173,13 @@ class WorkerProcess:
             if horse_connection.poll(5):
                 assert horse_connection.recv()
             else:
-                return TaskOutcome('aborted', 'Workhorse failed to start')
+                logger.error('Workhorse failed to start')
+                return task.get_abort_outcome('Workhorse failed to start')
             shutdown_requested = False
             while work_horse.is_alive():
                 self.worker.heartbeat()
                 if utcnow() >= timeout_at:
+                    logger.error('Task reached timeout, killing workhorse')
                     work_horse.send_signal(signal.SIGKILL)
                     return TaskOutcome('failure', f'Task timeout ({task.timeout} sec) reached')
                 try:
@@ -195,7 +197,8 @@ class WorkerProcess:
         if horse_connection.poll():
             return horse_connection.recv()
         else:
-            return TaskOutcome('aborted', 'Workhorse died unexpectedly')
+            logger.error('Workhorse died unexpectedly')
+            return task.get_abort_outcome('Workhorse died unexpectedly')
 
     def install_signal_handlers(self):
         signal.signal(signal.SIGINT, self.handle_stop_signal)

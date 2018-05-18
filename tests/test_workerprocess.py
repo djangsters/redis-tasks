@@ -229,7 +229,7 @@ def test_execute_task(mocker, settings, time_mocker):
 
     mock_join.side_effect = dying_join()
     outcome = wp.execute_task(task)
-    assert outcome.outcome == "aborted"
+    assert outcome.outcome == "failure"
     assert outcome.message == "Workhorse died unexpectedly"
 
     # Shutdown
@@ -246,15 +246,14 @@ def test_execute_task(mocker, settings, time_mocker):
         yield ShutdownRequested()
         assert shutdown_initiated
         yield None
-        horse.worker_connection.send(TaskOutcome("aborted", "abo"))
+        horse.worker_connection.send(TaskOutcome("requeue"))
         yield None
         horse_alive.return_value = False
         yield None
     mock_join.side_effect = shutdown_join()
     fake_signal = mocker.patch.object(WorkHorse, 'send_signal', side_effect=take_usr1)
     outcome = wp.execute_task(task)
-    assert outcome.outcome == "aborted"
-    assert outcome.message == "abo"
+    assert outcome.outcome == "requeue"
 
     # Timeout
     def timeout_join():
@@ -315,7 +314,7 @@ def test_signal_shutdown_in_task(suprocess_socket):
         assert not process.is_alive()
     task.refresh()
     assert task.status == TaskStatus.FAILED
-    assert task.error_message == "Worker shutdown"
+    assert 'Worker shutdown' in task.error_message.splitlines()[-1]
 
 
 def test_signal_shutdown_in_queuewait():

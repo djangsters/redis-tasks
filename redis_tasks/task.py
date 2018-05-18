@@ -72,7 +72,7 @@ class TaskProperties:
 
 class TaskOutcome:
     def __init__(self, outcome, message=None):
-        assert outcome in ['success', 'failure', 'aborted']
+        assert outcome in ['success', 'failure', 'requeue']
         self.outcome = outcome
         self.message = message
 
@@ -192,11 +192,8 @@ class Task:
             self.set_finished(pipeline=pipeline)
         elif outcome.outcome == 'failure':
             self.set_failed(outcome.message, pipeline=pipeline)
-        elif outcome.outcome == 'aborted':
-            if self.is_reentrant:
-                self.requeue(pipeline=pipeline)
-            else:
-                self.set_failed(outcome.message, pipeline=pipeline)
+        elif outcome.outcome == 'requeue':
+            self.requeue(pipeline=pipeline)
 
     @atomic_pipeline
     def handle_worker_death(self, *, pipeline):
@@ -246,10 +243,6 @@ class Task:
     def queue(self):
         from .queue import Queue
         return Queue(self.origin)
-
-    @property
-    def concluded(self):
-        return self.status not in [TaskStatus.FINISHED, TaskStatus.FAILED]
 
     @classmethod
     @atomic_pipeline
@@ -350,6 +343,8 @@ class Task:
         return self._generate_outcome(*exc_info)
 
     def _generate_outcome(self, *exc_info):
+        if isinstance(exc_info[1], TaskAborted) and self.is_reentrant:
+            return TaskOutcome('requeue')
         for mwc in reversed(task_middlewares):
             try:
                 middleware = mwc()
@@ -362,11 +357,15 @@ class Task:
 
         if not exc_info[0]:
             return TaskOutcome('success')
-        elif isinstance(exc_info[1], TaskAborted):
-            return TaskOutcome('aborted', message=exc_info[1].message)
         else:
             exc_string = ''.join(traceback.format_exception(*exc_info))
             return TaskOutcome('failure', message=exc_string)
+
+    def get_abort_outcome(self, message):
+        if self.is_reentrant:
+            return TaskOutcome('requeue')
+        else:
+            return TaskOutcome('failure', message)
 
     def __repr__(self):
         return '<{0} {1}: {2}>'.format(
