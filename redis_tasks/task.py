@@ -327,7 +327,13 @@ class Task:
                     func(*args, **kwargs)
 
             def mw_wrapper(mwc, task, run):
-                return lambda *args, **kwargs: mwc().run_task(task, run, args, kwargs)
+                def mw_run(*args, **kwargs):
+                    middleware = mwc()
+                    if hasattr(middleware, "run_task"):
+                        middleware.run_task(task, run, args, kwargs)
+                    else:
+                        run(*args, **kwargs)
+                return mw_run
 
             for middleware_constructor in reversed(task_middlewares):
                 run_task = mw_wrapper(middleware_constructor, self, run_task)
@@ -344,9 +350,12 @@ class Task:
         return self._generate_outcome(*exc_info)
 
     def _generate_outcome(self, *exc_info):
-        for middleware in reversed(task_middlewares):
+        for mwc in reversed(task_middlewares):
             try:
-                if middleware().process_outcome(self, *exc_info):
+                middleware = mwc()
+                if not hasattr(middleware, "process_outcome"):
+                    continue
+                if middleware.process_outcome(self, *exc_info):
                     exc_info = (None, None, None)
             except Exception:
                 exc_info = sys.exc_info()
