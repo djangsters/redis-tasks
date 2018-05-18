@@ -94,7 +94,6 @@ class Task:
 
         try:
             if isinstance(func, str):
-                # TODO: Test
                 self.func_name = func
                 func = self._get_func()
             else:
@@ -103,7 +102,6 @@ class Task:
         except Exception as e:
             raise ValueError('The given task function is not importable') from e
         if not callable(func):
-            # TODO: Test
             raise ValueError('The given task function is not callable')
 
         if args is None:
@@ -244,6 +242,15 @@ class Task:
         except Exception:
             return TaskProperties().timeout
 
+    @property
+    def queue(self):
+        from .queue import Queue
+        return Queue(self.origin)
+
+    @property
+    def concluded(self):
+        return self.status not in [TaskStatus.FINISHED, TaskStatus.FAILED]
+
     @classmethod
     @atomic_pipeline
     def delete_many(cls, task_ids, *, pipeline):
@@ -296,7 +303,8 @@ class Task:
         if store:
             pipeline.hmset(self.key, store)
 
-    def save_meta(self):
+    @atomic_pipeline
+    def save_meta(self, *, pipeline=None):
         self._save(['meta'])
 
     def execute(self, *, shutdown_cm=ExitStack()):
