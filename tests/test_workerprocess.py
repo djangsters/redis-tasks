@@ -230,7 +230,7 @@ def test_execute_task(mocker, settings, time_mocker):
     mock_join.side_effect = dying_join()
     outcome = wp.execute_task(task)
     assert outcome.outcome == "failure"
-    assert outcome.message == "Workhorse died unexpectedly"
+    assert "Workhorse died unexpectedly" in outcome.message
 
     # Shutdown
     shutdown_initiated = False
@@ -274,7 +274,7 @@ def test_execute_task(mocker, settings, time_mocker):
     fake_signal = mocker.patch.object(WorkHorse, 'send_signal', side_effect=take_kill)
     outcome = wp.execute_task(task)
     assert outcome.outcome == "failure"
-    assert outcome.message == "Task timeout (1 sec) reached"
+    assert "Task timeout (1 sec) reached" in outcome.message
     fake_signal.assert_called_once_with(9)
 
 

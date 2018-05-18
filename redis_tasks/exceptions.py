@@ -4,10 +4,6 @@ class TaskAborted(Exception):
         self.message = message
 
 
-class WorkerDied(TaskAborted):
-    pass
-
-
 class TaskDoesNotExist(Exception):
     pass
 

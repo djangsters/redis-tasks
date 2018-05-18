@@ -15,7 +15,6 @@ from .conf import RedisKey, connection, settings, task_middlewares
 from .exceptions import WorkerShutdown
 from .queue import Queue
 from .registries import registry_maintenance
-from .task import TaskOutcome
 from .utils import import_attribute, utcformat, utcnow, utcparse
 from .worker import Worker
 
@@ -157,7 +156,7 @@ class WorkerProcess:
             outcome = self.execute_task(task)
         except Exception:
             exc_string = ''.join(traceback.format_exception(*sys.exc_info()))
-            outcome = TaskOutcome('failure', message=exc_string)
+            outcome = task.get_abort_outcome(exc_string)
         self.worker.end_task(task, outcome)
         return True
 
@@ -181,7 +180,8 @@ class WorkerProcess:
                 if utcnow() >= timeout_at:
                     logger.error('Task reached timeout, killing workhorse')
                     work_horse.send_signal(signal.SIGKILL)
-                    return TaskOutcome('failure', f'Task timeout ({task.timeout} sec) reached')
+                    return task.get_abort_outcome(f'Task timeout ({task.timeout} sec) reached',
+                                                  may_requeue=False)
                 try:
                     with self.interruptible() if not shutdown_requested else nullcontext():
                         work_horse.join(settings.WORKER_HEARTBEAT_FREQ)

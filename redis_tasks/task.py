@@ -9,8 +9,7 @@ import redis_tasks
 
 from .conf import RedisKey, connection, settings, task_middlewares
 from .exceptions import (
-    InvalidOperation, TaskAborted, TaskDoesNotExist, WorkerDied,
-    WorkerShutdown)
+    InvalidOperation, TaskAborted, TaskDoesNotExist, WorkerShutdown)
 from .registries import failed_task_registry, finished_task_registry
 from .utils import (
     LazyObject, atomic_pipeline, deserialize, enum, generate_callstring,
@@ -202,14 +201,20 @@ class Task:
             # The worker died while moving the task
             redis_tasks.Queue(self.origin).push(self, at_front=True, pipeline=pipeline)
         elif self.status == TaskStatus.RUNNING:
-            try:
-                raise WorkerDied("Worker died")
-            except WorkerDied:
-                exc_info = sys.exc_info()
-            outcome = self._generate_outcome(*exc_info)
+            outcome = self.get_abort_outcome("Worker died")
             self.handle_outcome(outcome, pipeline=pipeline)
         else:
             raise Exception(f"Unexpected task status: {self.status}")
+
+    def get_abort_outcome(self, message, *, may_requeue=True):
+        if may_requeue and self.is_reentrant:
+            return TaskOutcome('requeue')
+        else:
+            try:
+                raise TaskAborted(message)
+            except TaskAborted:
+                exc_info = sys.exc_info()
+            return self._generate_outcome(*exc_info, may_requeue=may_requeue)
 
     def cancel(self):
         queue = redis_tasks.Queue(name=self.origin)
@@ -342,8 +347,8 @@ class Task:
 
         return self._generate_outcome(*exc_info)
 
-    def _generate_outcome(self, *exc_info):
-        if isinstance(exc_info[1], TaskAborted) and self.is_reentrant:
+    def _generate_outcome(self, *exc_info, may_requeue=True):
+        if may_requeue and isinstance(exc_info[1], TaskAborted) and self.is_reentrant:
             return TaskOutcome('requeue')
         for mwc in reversed(task_middlewares):
             try:
@@ -360,12 +365,6 @@ class Task:
         else:
             exc_string = ''.join(traceback.format_exception(*exc_info))
             return TaskOutcome('failure', message=exc_string)
-
-    def get_abort_outcome(self, message):
-        if self.is_reentrant:
-            return TaskOutcome('requeue')
-        else:
-            return TaskOutcome('failure', message)
 
     def __repr__(self):
         return '<{0} {1}: {2}>'.format(
