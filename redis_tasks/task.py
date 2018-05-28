@@ -99,9 +99,9 @@ class Task:
                 self.func_name = '{0}.{1}'.format(func.__module__, func.__name__)
                 assert self._get_func() == func
         except Exception as e:
-            raise ValueError('The given task function is not importable') from e
+            raise ValueError(f'The given task function {self.func_name!r} is not importable') from e
         if not callable(func):
-            raise ValueError('The given task function is not callable')
+            raise ValueError(f'The given task function {self.func_name!r} is not callable')
 
         if args is None:
             args = ()

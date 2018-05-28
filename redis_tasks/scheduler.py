@@ -95,6 +95,9 @@ class SchedulerEntry:
 
         self.next_run = self.schedule.get_next(self.prev_run)
 
+        # Make sure task config is valid
+        Task(*self.task_template)
+
     @atomic_pipeline
     def save(self, *, pipeline):
         pipeline.hset(self.key, "prev_run", utcformat(self.prev_run))

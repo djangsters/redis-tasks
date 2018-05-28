@@ -94,10 +94,16 @@ class TestSchedulerEntry:
     def time(self, *args):
         return datetime.datetime(2000, 1, 1, *args, tzinfo=pytz.utc)
 
-    def test_init_and_save(self, time_mocker, connection, settings, assert_atomic):
+    def test_sanity_check(self):
+        schedule = CrontabSchedule('* * * * *')
+        with pytest.raises(ValueError):
+            SchedulerEntry("a", {"task": "broken", "schedule": schedule})
+
+    def test_init_and_save(self, time_mocker, connection, settings, assert_atomic, mocker):
         time = time_mocker('redis_tasks.scheduler.utcnow')
         schedule = CrontabSchedule('* * * * *')
-        se = SchedulerEntry("a", {"task": "foo", "schedule": schedule})
+        task_fun = 'tests.utils.stub'
+        se = SchedulerEntry("a", {"task": task_fun, "schedule": schedule})
         assert se.id == "a"
         assert se.prev_run == time.now
         assert se.next_run and se.next_run != se.prev_run
@@ -108,14 +114,14 @@ class TestSchedulerEntry:
         assert se.last_save == time.now
 
         time.step()
-        loaded = SchedulerEntry("a", {"task": "foo", "schedule": schedule})
+        loaded = SchedulerEntry("a", {"task": task_fun, "schedule": schedule})
         assert loaded.prev_run == se.prev_run
         assert loaded.next_run == se.next_run
         assert loaded.prev_task_id is None
 
         se.prev_task_id = "b"
         se.save()
-        loaded = SchedulerEntry("a", {"task": "foo", "schedule": schedule})
+        loaded = SchedulerEntry("a", {"task": task_fun, "schedule": schedule})
         assert loaded.prev_task_id == "b"
 
         settings.SCHEDULER_MAX_CATCHUP = 60
@@ -129,7 +135,7 @@ class TestSchedulerEntry:
         assert se.queue.name == "default"
 
         se = SchedulerEntry("a", {
-            "task": "foo",
+            "task": task_fun,
             "schedule": schedule,
             "singleton": False,
             "queue": "myq",
