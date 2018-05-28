@@ -10,7 +10,7 @@ from redis_tasks.scheduler import (
     CrontabSchedule, Mutex, PeriodicSchedule, Scheduler, SchedulerEntry)
 from redis_tasks.task import TaskOutcome
 from redis_tasks.utils import one, utcnow
-from tests.utils import WorkerFactory, stub
+from tests.utils import WorkerFactory
 
 
 def iter_schedule(schedule, start, count):
@@ -99,11 +99,11 @@ class TestSchedulerEntry:
         with pytest.raises(ValueError):
             SchedulerEntry("a", {"task": "broken", "schedule": schedule})
 
-    def test_init_and_save(self, time_mocker, connection, settings, assert_atomic, mocker):
+    def test_init_and_save(self, time_mocker, connection, settings,
+                           assert_atomic, mocker, stub):
         time = time_mocker('redis_tasks.scheduler.utcnow')
         schedule = CrontabSchedule('* * * * *')
-        task_fun = 'tests.utils.stub'
-        se = SchedulerEntry("a", {"task": task_fun, "schedule": schedule})
+        se = SchedulerEntry("a", {"task": stub.path, "schedule": schedule})
         assert se.id == "a"
         assert se.prev_run == time.now
         assert se.next_run and se.next_run != se.prev_run
@@ -114,14 +114,14 @@ class TestSchedulerEntry:
         assert se.last_save == time.now
 
         time.step()
-        loaded = SchedulerEntry("a", {"task": task_fun, "schedule": schedule})
+        loaded = SchedulerEntry("a", {"task": stub.path, "schedule": schedule})
         assert loaded.prev_run == se.prev_run
         assert loaded.next_run == se.next_run
         assert loaded.prev_task_id is None
 
         se.prev_task_id = "b"
         se.save()
-        loaded = SchedulerEntry("a", {"task": task_fun, "schedule": schedule})
+        loaded = SchedulerEntry("a", {"task": stub.path, "schedule": schedule})
         assert loaded.prev_task_id == "b"
 
         settings.SCHEDULER_MAX_CATCHUP = 60
@@ -135,7 +135,7 @@ class TestSchedulerEntry:
         assert se.queue.name == "default"
 
         se = SchedulerEntry("a", {
-            "task": task_fun,
+            "task": stub.path,
             "schedule": schedule,
             "singleton": False,
             "queue": "myq",
@@ -143,16 +143,16 @@ class TestSchedulerEntry:
         assert se.singleton is False
         assert se.queue.name == "myq"
 
-    def test_enqueue(self, assert_atomic):
+    def test_enqueue(self, assert_atomic, stub):
         schedule = CrontabSchedule('* * * * *')
         queue = Queue()
-        se = SchedulerEntry("a", {"task": "tests.utils.stub", "schedule": schedule})
+        se = SchedulerEntry("a", {"task": stub.path, "schedule": schedule})
         with assert_atomic():
             task = se.enqueue()
         assert task.origin == "default"
         assert task._get_func() == stub
 
-        se = SchedulerEntry("a", {"task": "tests.utils.stub", "schedule": schedule,
+        se = SchedulerEntry("a", {"task": stub.path, "schedule": schedule,
                                   "args": ["a"], "kwargs": {"c": "d"}})
 
         task = se.enqueue()
@@ -160,12 +160,12 @@ class TestSchedulerEntry:
         assert task.kwargs == {"c": "d"}
         assert queue.count() == 2
 
-    def test_is_enqueued(self):
+    def test_is_enqueued(self, stub):
         schedule = CrontabSchedule('* * * * *')
         queue = Queue()
         worker = WorkerFactory()
         worker.startup()
-        se = SchedulerEntry("a", {"task": "tests.utils.stub", "schedule": schedule})
+        se = SchedulerEntry("a", {"task": stub.path, "schedule": schedule})
         assert se.is_enqueued() is False
 
         task = se.enqueue()
@@ -189,13 +189,13 @@ class TestSchedulerEntry:
         worker.end_task(task, TaskOutcome("failure"))
         assert se.is_enqueued() is False
 
-    def test_process_singleton(self, mocker, settings):
+    def test_process_singleton(self, mocker, settings, stub):
         queue = Queue()
         settings.SCHEDULER_MAX_CATCHUP = 60 * 60 * 24
         schedule = mocker.Mock()
         get_next = schedule.get_next
         get_next.return_value = self.time(1)
-        se = SchedulerEntry("a", {"task": "tests.utils.stub", "schedule": schedule,
+        se = SchedulerEntry("a", {"task": stub.path, "schedule": schedule,
                                   "singleton": True})
         se.prev_run = self.time(0)
 
@@ -226,12 +226,12 @@ class TestSchedulerEntry:
         get_next.assert_called_with(self.time(2))
         assert se.next_run == self.time(3)
 
-    def test_process_max_catchup(self, mocker, settings):
+    def test_process_max_catchup(self, mocker, settings, stub):
         settings.SCHEDULER_MAX_CATCHUP = 60 * 60 * 1
         schedule = mocker.Mock()
         get_next = schedule.get_next
         get_next.return_value = self.time(4)
-        se = SchedulerEntry("a", {"task": "tests.utils.stub", "schedule": schedule,
+        se = SchedulerEntry("a", {"task": stub.path, "schedule": schedule,
                                   "singleton": True})
         get_next.reset_mock()
         se.prev_run = self.time(0)
@@ -239,13 +239,13 @@ class TestSchedulerEntry:
         get_next.assert_called_once_with(self.time(1))
         assert se.is_enqueued() is False
 
-    def test_process_non_singleton(self, mocker, settings):
+    def test_process_non_singleton(self, mocker, settings, stub):
         queue = Queue()
         settings.SCHEDULER_MAX_CATCHUP = 60 * 60 * 24
         schedule = mocker.Mock()
         get_next = schedule.get_next
         get_next.return_value = self.time(2)
-        se = SchedulerEntry("a", {"task": "tests.utils.stub", "schedule": schedule,
+        se = SchedulerEntry("a", {"task": stub.path, "schedule": schedule,
                                   "singleton": False})
 
         get_next.reset_mock()
@@ -321,12 +321,12 @@ class FixedSchedule:
 
 
 class TestScheduler:
-    def test_basic(self, settings, mocker, time_mocker):
+    def test_basic(self, settings, mocker, time_mocker, stub):
         mocktime = time_mocker('redis_tasks.scheduler.utcnow')
         schedule = mocker.Mock()
         schedule.get_next.return_value = mocktime.now
         settings.SCHEDULE = {'mytask': {
-            'task': 'tests.utils.stub',
+            'task': stub.path,
             'schedule': schedule,
         }}
         queue = Queue()
@@ -341,14 +341,14 @@ class TestScheduler:
             scheduler.run()
         assert queue.count() == 1
 
-    def test_scheduling(self, settings, mocker):
+    def test_scheduling(self, settings, mocker, stub):
         in_ms = lambda ms: utcnow() + datetime.timedelta(milliseconds=ms)  # noqa
         settings.SCHEDULE = {
-            'a': {'task': 'tests.utils.stub',
+            'a': {'task': stub.path,
                   'args': ["a"],
                   'singleton': False,
                   'schedule': FixedSchedule([in_ms(10), in_ms(30), in_ms(1000)])},
-            'b': {'task': 'tests.utils.stub',
+            'b': {'task': stub.path,
                   'args': ["b"],
                   'singleton': False,
                   'schedule': FixedSchedule([in_ms(20), in_ms(1000)])},

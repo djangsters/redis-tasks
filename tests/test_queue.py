@@ -7,7 +7,7 @@ from redis_tasks.exceptions import TaskDoesNotExist
 from redis_tasks.queue import Queue
 from redis_tasks.registries import queue_registry
 from redis_tasks.task import Task
-from tests.utils import TaskFactory, WorkerFactory, id_list, stub
+from tests.utils import TaskFactory, WorkerFactory, id_list
 
 
 def test_queue_basics(assert_atomic):
@@ -19,8 +19,8 @@ def test_queue_basics(assert_atomic):
 
     assert q.count() == 0
     with assert_atomic():
-        task = q.enqueue_call(stub)
-    q.enqueue_call(stub)
+        task = q.enqueue_call()
+    q.enqueue_call()
     assert q.count() == 2
 
     assert q.dequeue(worker).id == task.id
@@ -29,8 +29,8 @@ def test_queue_basics(assert_atomic):
 
 def test_remove_and_delete(assert_atomic, connection):
     q = Queue()
-    q.enqueue_call(stub)
-    task = q.enqueue_call(stub)
+    q.enqueue_call()
+    task = q.enqueue_call()
     assert q.count() == 2
     assert connection.exists(task.key)
     with assert_atomic():
@@ -58,19 +58,19 @@ def test_queue_all():
     q1 = Queue('a')
     q2 = Queue('b')
     q3 = Queue('c')
-    q2.enqueue_call(stub)
-    q3.enqueue_call(stub)
+    q2.enqueue_call()
+    q3.enqueue_call()
     assert [x.name for x in Queue.all()] == ['b', 'c']
     q2.delete()
     q3.empty()
-    q1.enqueue_call(stub)
+    q1.enqueue_call()
     assert [x.name for x in Queue.all()] == ['a', 'c']
 
 
 def test_unblocking(connection):
     worker = WorkerFactory()
     q = Queue()
-    q.enqueue_call(stub)
+    q.enqueue_call()
     assert connection.llen(q.unblock_key)
     assert q.dequeue(worker) is not None
     assert connection.llen(q.unblock_key)
@@ -80,8 +80,8 @@ def test_unblocking(connection):
 
 def test_push(assert_atomic):
     q = Queue()
-    q.enqueue_call(stub)
-    q.enqueue_call(stub)
+    q.enqueue_call()
+    q.enqueue_call()
     task = TaskFactory()
     with assert_atomic():
         q.push(task)
@@ -99,8 +99,8 @@ class TestEmptyAndDelete:
 
     def test_empty(self, assert_atomic, connection, mocker):
         q = Queue()
-        t1 = q.enqueue_call(stub)
-        t2 = q.enqueue_call(stub)
+        t1 = q.enqueue_call()
+        t2 = q.enqueue_call()
         assert connection.exists(t1.key)
         with assert_atomic():
             q.empty()
@@ -112,8 +112,8 @@ class TestEmptyAndDelete:
 
     def test_delete(self, assert_atomic, connection, mocker):
         q = Queue()
-        q.enqueue_call(stub)
-        q.enqueue_call(stub)
+        q.enqueue_call()
+        q.enqueue_call()
         with assert_atomic():
             q.delete()
         assert not connection.exists(q.key)
@@ -122,14 +122,14 @@ class TestEmptyAndDelete:
 
     def test_delete_transaction(self, assert_atomic, connection, mocker):
         q = Queue()
-        task1 = q.enqueue_call(stub)
+        task1 = q.enqueue_call()
         task2 = None
 
         def task_delete(task_ids, **kwargs):
             nonlocal task2
             if not task2:
                 # interrupt the transaction with the creation of a new task
-                task2 = q.enqueue_call(stub)
+                task2 = q.enqueue_call()
             else:
                 # assert that the previous transaction attempt was canceled
                 assert connection.exists(task1.key)
@@ -148,8 +148,8 @@ def test_dequeue(connection):
     q = Queue()
     assert q.dequeue(worker) is None
 
-    task1 = q.enqueue_call(stub)
-    task2 = q.enqueue_call(stub)
+    task1 = q.enqueue_call()
+    task2 = q.enqueue_call()
     assert connection.llen(q.unblock_key) == 2
 
     assert q.dequeue(worker).id == task1.id

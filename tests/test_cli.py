@@ -2,7 +2,7 @@ import click
 import pytest
 
 from redis_tasks.queue import Queue
-from tests.utils import QueueFactory, WorkerFactory, stub
+from tests.utils import QueueFactory, WorkerFactory
 
 
 @pytest.fixture
@@ -18,7 +18,7 @@ def cli_run():
     return run
 
 
-def test_empty(cli_run):
+def test_empty(cli_run, stub):
     queues = [QueueFactory() for i in range(5)]
     for q in queues:
         q.enqueue_call(stub)
@@ -59,7 +59,7 @@ def test_worker(cli_run, mocker):
     assert worker_main.call_args[1]["description"] == 'foo'
 
 
-def test_info(cli_run):
+def test_info(cli_run, stub):
     cli_run('info')
 
     for i in range(2):

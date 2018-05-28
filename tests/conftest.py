@@ -136,3 +136,29 @@ def kill_child_processes():
     for child in multiprocessing.active_children():
         print(f"Killing left over process {child.name}")
         os.kill(child.pid, signal.SIGKILL)
+
+
+def _stub(*args, **kwargs):
+    return _stub.mock(*args, **kwargs)
+
+
+@pytest.fixture
+def stub():
+    _stub.mock = mock.Mock(return_value=None)
+    _stub.path = f"{_stub.__module__}._stub"
+    return _stub
+
+
+@pytest.fixture(autouse=True)
+def _task_stub(stub, mocker):
+    from redis_tasks import Task
+
+    def my_init(self, *args, **kwargs):
+        __tracebackhide__ = True
+        if not args and not kwargs:
+            args = [stub]
+        return orig_init(self, *args, **kwargs)
+
+    orig_init = Task.__init__
+    mocker.patch.object(Task, '__init__', my_init)
+    yield

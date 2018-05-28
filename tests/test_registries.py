@@ -5,7 +5,7 @@ from redis_tasks.conf import RedisKey
 from redis_tasks.exceptions import WorkerDoesNotExist
 from redis_tasks.task import TaskOutcome
 from tests.utils import (
-    QueueFactory, Something, TaskFactory, WorkerFactory, stub)
+    QueueFactory, Something, TaskFactory, WorkerFactory)
 
 
 def test_expiring_registry(connection, settings, mocker, assert_atomic):
@@ -75,8 +75,8 @@ def test_worker_registry(connection, settings, mocker, assert_atomic):
 def test_worker_reg_running_tasks():
     registry = registries.worker_registry
     queue = QueueFactory()
-    t1 = queue.enqueue_call(stub)
-    t2 = queue.enqueue_call(stub)
+    t1 = queue.enqueue_call()
+    t2 = queue.enqueue_call()
     worker1 = WorkerFactory(queues=[queue])
     worker2 = WorkerFactory(queues=[queue])
     worker1.startup()

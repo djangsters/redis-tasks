@@ -1,5 +1,5 @@
 from redis_tasks.queue import Queue
-from redis_tasks.task import Task, redis_task
+from redis_tasks.task import Task
 from redis_tasks.worker import Worker
 
 worker_sequence = 0
@@ -7,26 +7,14 @@ queue_sequence = 0
 task_sequence = 0
 
 
-mock_func_target = None
-
-
-def mock_func_proxy(*args, **kwargs):
-    return mock_func_target(*args, **kwargs)
-
-
-def stub():
-    pass
-
-
-@redis_task(reentrant=True)
-def reentrant_stub():
+def _stub():
     pass
 
 
 def TaskFactory():
     global task_sequence
     task_sequence += 1
-    task = Task(func=stub)
+    task = Task(func=_stub)
     task.id = f'task_{task_sequence}'
     return task
 

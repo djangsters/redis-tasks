@@ -9,7 +9,7 @@ from redis_tasks.registries import (
     failed_task_registry, finished_task_registry, worker_registry)
 from redis_tasks.task import Task, TaskOutcome, TaskStatus, redis_task
 from redis_tasks.utils import decode_list
-from tests.utils import QueueFactory, WorkerFactory, reentrant_stub, stub
+from tests.utils import QueueFactory, WorkerFactory
 
 
 class SomeClass:
@@ -24,7 +24,16 @@ def misleading_func():
     pass
 
 
-def test_init():
+def name_func():
+    pass
+
+
+@redis_task(reentrant=True)
+def reentrant_stub():
+    pass
+
+
+def test_init(stub):
     def closure():
         pass
 
@@ -42,11 +51,11 @@ def test_init():
     with pytest.raises(TypeError):
         Task(stub, kwargs=["foo"])
 
-    t = Task(stub, ["foo"], {"bar": "a"})
-    assert t.description == "tests.utils.stub('foo', bar='a')"
+    t = Task(name_func, ["foo"], {"bar": "a"})
+    assert t.description == "tests.test_task.name_func('foo', bar='a')"
 
 
-def test_state_transistions(assert_atomic, connection, time_mocker):
+def test_state_transistions(assert_atomic, connection, time_mocker, stub):
     time = time_mocker('redis_tasks.task.utcnow')
     task = Task(reentrant_stub)
     q = QueueFactory()
@@ -119,7 +128,7 @@ def test_state_transistions(assert_atomic, connection, time_mocker):
 
 def test_cancel(assert_atomic, connection):
     q = QueueFactory()
-    task = q.enqueue_call(stub)
+    task = q.enqueue_call()
     with assert_atomic():
         task.cancel()
     assert q.get_task_ids() == []
@@ -128,7 +137,7 @@ def test_cancel(assert_atomic, connection):
 
     w = WorkerFactory()
     w.startup()
-    task = q.enqueue_call(stub)
+    task = q.enqueue_call()
     q.dequeue(w)
     with pytest.raises(InvalidOperation):
         with assert_atomic():
@@ -137,7 +146,7 @@ def test_cancel(assert_atomic, connection):
     assert connection.exists(task.key)
 
 
-def test_worker_death(assert_atomic, connection):
+def test_worker_death(assert_atomic, connection, stub):
     def setup(func):
         w = WorkerFactory()
         w.startup()
@@ -180,7 +189,7 @@ def test_worker_death(assert_atomic, connection):
     assert failed_task_registry.get_task_ids() == []
 
 
-def test_get_func():
+def test_get_func(stub):
     assert Task(stub)._get_func() == stub
 
 
@@ -189,7 +198,7 @@ def my_timeout_func():
     pass
 
 
-def test_get_properties(settings):
+def test_get_properties(settings, stub):
     assert not Task(stub).is_reentrant
     assert Task(reentrant_stub).is_reentrant
 
@@ -198,7 +207,7 @@ def test_get_properties(settings):
 
 
 def test_delete_many(connection, assert_atomic):
-    tasks = [Task(stub) for i in range(5)]
+    tasks = [Task() for i in range(5)]
     for t in tasks:
         t._save()
 
@@ -211,7 +220,7 @@ def test_delete_many(connection, assert_atomic):
         assert connection.exists(t.key)
 
 
-def test_persistence(assert_atomic, connection):
+def test_persistence(assert_atomic, connection, stub):
     fields = {'func_name', 'args', 'kwargs', 'status', 'origin', 'description',
               'error_message', 'enqueued_at', 'started_at', 'ended_at', 'meta',
               'aborted_runs'}
@@ -274,7 +283,7 @@ def test_persistence(assert_atomic, connection):
         Task.fetch('nonexist')
 
 
-def test_init_save_fetch_delete(connection, assert_atomic):
+def test_init_save_fetch_delete(connection, assert_atomic, stub):
     t = Task(stub, ["foo"])
     assert not connection.exists(t.key)
     with assert_atomic():

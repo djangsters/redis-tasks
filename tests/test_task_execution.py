@@ -5,43 +5,42 @@ import pytest
 
 from redis_tasks.exceptions import TaskAborted, WorkerShutdown
 from redis_tasks.task import Task
-from tests.utils import Something, mock_func_proxy, stub
+from tests.utils import Something
 
 
-def test_successful_execute(mocker):
-    task = Task(mock_func_proxy, ["foo"], {"foo": "bar"})
-    func = mocker.patch('tests.utils.mock_func_target')
+def test_successful_execute(mocker, stub):
+    task = Task(stub, ["foo"], {"foo": "bar"})
     outcome = task.execute()
-    assert func.called_once_with("foo", foo="bar")
+    assert stub.mock.called_once_with("foo", foo="bar")
     assert outcome.outcome == 'success'
 
-    task = Task(mock_func_proxy)
-    func.reset_mock()
+    task = Task(stub)
+    stub.mock.reset_mock()
     outcome = task.execute()
-    assert func.called_once_with("foo", foo="bar")
+    assert stub.mock.called_once_with("foo", foo="bar")
     assert outcome.outcome == 'success'
 
 
-def test_failed_execute(mocker):
-    func = mocker.patch('tests.utils.mock_func_target', side_effect=ValueError("TestException"))
-    task = Task(mock_func_proxy)
+def test_failed_execute(mocker, stub):
+    stub.mock.side_effect = ValueError("TestException")
+    task = Task(stub)
     outcome = task.execute()
-    assert func.called_once_with()
+    assert stub.mock.called_once_with()
     assert outcome.outcome == 'failure'
     assert outcome.message.splitlines()[-1] == 'ValueError: TestException'
 
 
-def test_aborted_execute(mocker):
-    func = mocker.patch('tests.utils.mock_func_target', side_effect=WorkerShutdown())
-    task = Task(mock_func_proxy)
+def test_aborted_execute(mocker, stub):
+    stub.mock.side_effect = WorkerShutdown()
+    task = Task(stub)
     outcome = task.execute()
-    assert func.called_once_with()
+    assert stub.mock.called_once_with()
     assert outcome.outcome == 'failure'
     assert outcome.message.splitlines()[-1] == 'redis_tasks.exceptions.TaskAborted: Worker shutdown'
 
 
-def test_broken_task():
-    task = Task(mock_func_proxy)
+def test_broken_task(stub):
+    task = Task(stub)
     task.func_name = "nonimportable.function"
     outcome = task.execute()
     assert outcome.outcome == 'failure'
@@ -49,16 +48,15 @@ def test_broken_task():
         'RuntimeError: Failed to import task function')
 
 
-def test_shutdown_cm(mocker):
+def test_shutdown_cm(mocker, stub):
     @contextmanager
     def entry_shutdown_cm():
         raise WorkerShutdown()
         yield
 
-    func = mocker.patch('tests.utils.mock_func_target')
-    task = Task(mock_func_proxy)
+    task = Task(stub)
     outcome = task.execute(shutdown_cm=entry_shutdown_cm())
-    assert not func.called
+    assert not stub.mock.called
     assert outcome.outcome == 'failure'
     assert 'Worker shutdown' in outcome.message.splitlines()[-1]
 
@@ -67,9 +65,9 @@ def test_shutdown_cm(mocker):
         yield
         raise WorkerShutdown()
 
-    func.reset_mock()
+    stub.mock.reset_mock()
     outcome = task.execute(shutdown_cm=exit_shutdown_cm())
-    assert func.called_once_with()
+    assert stub.mock.called_once_with()
     assert outcome.outcome == 'failure'
     assert 'Worker shutdown' in outcome.message.splitlines()[-1]
 
@@ -85,12 +83,12 @@ def test_shutdown_cm(mocker):
     def checking_func():
         assert in_cm
 
-    func = mocker.patch('tests.utils.mock_func_target', new=checking_func)
+    stub.mock.side_effect = checking_func
     outcome = task.execute(shutdown_cm=reporting_cm())
     assert outcome.outcome == 'success'
 
 
-def test_generate_outcome():
+def test_generate_outcome(stub):
     task = Task(stub)
     assert task._generate_outcome(None, None, None).outcome == 'success'
 
@@ -169,7 +167,7 @@ def SpyMiddleware():
     _SpyMiddleware.reset()
 
 
-def test_middleware_order(mocker, SpyMiddleware):
+def test_middleware_order(mocker, SpyMiddleware, stub):
     task = Task(stub)
     spies = [SpyMiddleware(), SpyMiddleware()]
     cmcheck = CMCheckMiddleware()
@@ -186,7 +184,7 @@ def test_middleware_order(mocker, SpyMiddleware):
     assert not cmcheck.failed
 
 
-def test_middleware_raise_before(mocker, SpyMiddleware):
+def test_middleware_raise_before(mocker, SpyMiddleware, stub):
     task = Task(stub)
     spies = [SpyMiddleware(), SpyMiddleware(), SpyMiddleware()]
     mocker.patch('redis_tasks.task.task_middlewares', new=spies)
@@ -203,7 +201,7 @@ def test_middleware_raise_before(mocker, SpyMiddleware):
         (spies[0], 'process_outcome', (task, ArithmeticError, Something, Something))]
 
 
-def test_middleware_raise_after(mocker, SpyMiddleware):
+def test_middleware_raise_after(mocker, SpyMiddleware, stub):
     task = Task(stub)
     spies = [SpyMiddleware(), SpyMiddleware()]
     mocker.patch('redis_tasks.task.task_middlewares', new=spies)
@@ -220,7 +218,7 @@ def test_middleware_raise_after(mocker, SpyMiddleware):
         (spies[0], 'process_outcome', (task, ArithmeticError, Something, Something))]
 
 
-def test_outcome_middlewares(mocker, SpyMiddleware):
+def test_outcome_middlewares(mocker, SpyMiddleware, stub):
     task = Task(stub)
     spies = [SpyMiddleware() for i in range(2)]
     mocker.patch('redis_tasks.task.task_middlewares', new=spies)
@@ -245,7 +243,7 @@ def test_outcome_middlewares(mocker, SpyMiddleware):
     assert outcome.message.splitlines()[-1] == 'ArithmeticError'
 
 
-def test_middleware_constructor_exception(SpyMiddleware, mocker):
+def test_middleware_constructor_exception(SpyMiddleware, mocker, stub):
     task = Task(stub)
     spies = [SpyMiddleware() for i in range(2)]
     mws = [spies[0], "nope", spies[1]]

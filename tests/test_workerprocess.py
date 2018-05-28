@@ -11,8 +11,7 @@ from redis_tasks.utils import decode_list
 from redis_tasks.worker import WorkerState
 from redis_tasks.worker_process import (
     ShutdownRequested, WorkerProcess, WorkHorse, generate_worker_description)
-from tests.utils import (
-    QueueFactory, TaskFactory, id_list, mock_func_proxy, stub)
+from tests.utils import QueueFactory, TaskFactory, id_list
 
 
 def test_generate_description():
@@ -35,8 +34,8 @@ def test_queue_iter(connection, mocker):
     wp = WorkerProcess(queues)
     wp.worker.startup()
     qi = wp.queue_iter(False)
-    task1 = queues[1].enqueue_call(stub)
-    task2 = queues[0].enqueue_call(stub)
+    task1 = queues[1].enqueue_call()
+    task2 = queues[0].enqueue_call()
     assert next(qi).id == task2.id
     assert next(qi).id == task1.id
 
@@ -46,11 +45,11 @@ def test_queue_iter(connection, mocker):
         if await_counter == 1:
             return None
         elif await_counter == 2:
-            task3 = queues[1].enqueue_call(stub)
+            task3 = queues[1].enqueue_call()
             return queues[1]
         elif await_counter == 3:
-            task4 = queues[1].enqueue_call(stub)
-            task5 = queues[1].enqueue_call(stub)
+            task4 = queues[1].enqueue_call()
+            task5 = queues[1].enqueue_call()
             return queues[0]
         assert False
 
@@ -73,13 +72,13 @@ def test_queue_iter(connection, mocker):
     # Burst mode
     wp = WorkerProcess(queues)
     wp.worker.startup()
-    task1 = queues[1].enqueue_call(stub)
-    task2 = queues[0].enqueue_call(stub)
-    task3 = queues[1].enqueue_call(stub)
+    task1 = queues[1].enqueue_call()
+    task2 = queues[0].enqueue_call()
+    task3 = queues[1].enqueue_call()
     assert id_list(wp.queue_iter(True)) == id_list([task2, task1, task3])
 
 
-def test_run(settings, mocker):
+def test_run(settings, mocker, stub):
     tasks = [mocker.sentinel.t1, mocker.sentinel.t2, mocker.sentinel.t3]
     mocker.patch('redis_tasks.worker_process.WorkerProcess.queue_iter', return_value=tasks)
 
@@ -95,11 +94,11 @@ def test_run(settings, mocker):
     assert maintenance().run_if_neccessary.call_count == 3
     assert wp.worker.state == WorkerState.DEAD
 
-    settings.WORKER_PRELOAD_FUNCTION = 'tests.utils.mock_func_proxy'
-    func = mocker.patch('tests.utils.mock_func_target')
+    settings.WORKER_PRELOAD_FUNCTION = stub.path
+    stub.mock.reset_mock()
     wp = WorkerProcess([QueueFactory()])
     wp.run(True)
-    assert func.call_count == 1
+    assert stub.mock.call_count == 1
 
 
 def test_run_shutdown(settings, mocker):
@@ -111,7 +110,7 @@ def test_run_shutdown(settings, mocker):
     assert wp.worker.shutdown_at
 
 
-def test_heartbeats(mocker):
+def test_heartbeats(mocker, stub):
     heartbeat_sent = False
 
     def send_heartbeat(*args, **kwargs):
@@ -133,7 +132,7 @@ def test_heartbeats(mocker):
             consume_heartbeat()
             print("Awaited!")
             yield None
-        task = queue.enqueue_call(mock_func_proxy)
+        task = queue.enqueue_call(stub)
         consume_heartbeat()
         yield queue
         raise ShutdownRequested()
@@ -152,7 +151,7 @@ def test_heartbeats(mocker):
         yield None
     mock_join = mocker.patch.object(WorkHorse, 'join', side_effect=my_join())
 
-    func = mocker.patch('tests.utils.mock_func_target')
+    stub.mock.reset_mock()
     queue = QueueFactory()
     task = None
     wp = WorkerProcess([queue])
@@ -164,14 +163,14 @@ def test_heartbeats(mocker):
     assert maintenance.call_count == 1
     assert mock_await.call_count == 5
     assert mock_join.call_count == 3
-    assert func.called
+    assert stub.mock.called
 
 
 def test_process_task(mocker):
     q = QueueFactory()
     wp = WorkerProcess([q])
     wp.worker.startup()
-    q.enqueue_call(stub)
+    q.enqueue_call()
     task = q.dequeue(wp.worker)
 
     def my_execute(task):
@@ -184,7 +183,7 @@ def test_process_task(mocker):
     print(task.error_message)
     assert task.status == TaskStatus.FINISHED
 
-    q.enqueue_call(stub)
+    q.enqueue_call()
     task = q.dequeue(wp.worker)
     execute.side_effect = ArithmeticError()
     wp.process_task(task)

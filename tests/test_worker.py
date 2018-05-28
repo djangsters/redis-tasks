@@ -9,7 +9,7 @@ from redis_tasks.registries import failed_task_registry, worker_registry
 from redis_tasks.task import TaskOutcome
 from redis_tasks.utils import decode_list
 from redis_tasks.worker import Worker, WorkerState
-from tests.utils import QueueFactory, id_list, stub
+from tests.utils import QueueFactory, id_list
 
 
 def test_state_transitions(time_mocker, connection, assert_atomic):
@@ -27,7 +27,7 @@ def test_state_transitions(time_mocker, connection, assert_atomic):
         assert w.started_at == time.now
         assert w.state == WorkerState.IDLE
 
-    queue.enqueue_call(stub)
+    queue.enqueue_call()
     with assert_atomic(exceptions=['hgetall']):
         task = queue.dequeue(worker)
     assert connection.exists(worker.key, worker.task_key) == 2
@@ -83,7 +83,7 @@ def test_died(time_mocker, connection, assert_atomic):
     time.step()
     worker.startup()
     time.step()
-    queue.enqueue_call(stub)
+    queue.enqueue_call()
     task = queue.dequeue(worker)
     with assert_atomic(exceptions=['hgetall']):
         worker.died()
@@ -101,7 +101,7 @@ def test_died(time_mocker, connection, assert_atomic):
     time.step()
     worker.startup()
     time.step()
-    queue.enqueue_call(stub)
+    queue.enqueue_call()
     task = queue.dequeue(worker)
     worker.start_task(task)
     with assert_atomic(exceptions=['hgetall']):
@@ -119,7 +119,7 @@ def test_died(time_mocker, connection, assert_atomic):
 def test_fetch_current_task():
     worker = Worker('testworker', queues=[QueueFactory()])
     queue = worker.queues[0]
-    queue.enqueue_call(stub)
+    queue.enqueue_call()
     assert worker.fetch_current_task() is None
     task = queue.dequeue(worker)
     assert worker.fetch_current_task().id == task.id
