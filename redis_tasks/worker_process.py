@@ -155,6 +155,7 @@ class WorkerProcess:
         try:
             outcome = self.execute_task(task)
         except Exception:
+            # TODO: check whether this is necessary, execute_tasks should not raise
             exc_string = ''.join(traceback.format_exception(*sys.exc_info()))
             outcome = task.get_abort_outcome(exc_string)
         self.worker.end_task(task, outcome)
