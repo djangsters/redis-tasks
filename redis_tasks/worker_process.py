@@ -295,3 +295,37 @@ class WorkHorse(multiprocessing.Process):
 
     def send_signal(self, sig):
         os.kill(self.pid, sig)
+
+
+class TestWorker:
+    def __init__(self, queues=['default']):
+        id = str(uuid.uuid4())
+        self.worker = Worker(id, queues=queues,
+                             description=f'TestWorker-{id}')
+        self.failed = []
+        self.succeeded = []
+
+    def run(self):
+        self.worker.startup()
+        i = 0
+        while True:
+            for queue in self.worker.queues:
+                self.maybe_shutdown()
+                task = queue.dequeue(self.worker)
+                if task:
+                    break
+            else:
+                break
+
+            i += 1
+            self.worker.start_task(task)
+            outcome = task.execute()
+            self.worker.end_task(task, outcome)
+
+            if outcome.outcome == 'success':
+                self.succeeded.append(task)
+            elif outcome.outcome == 'failure':
+                self.failed.append(task)
+            else:
+                raise RuntimeError("Unexpected task outcome")
+        return i

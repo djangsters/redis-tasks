@@ -1,6 +1,6 @@
 # flake8: noqa
 from .queue import Queue
-from .worker_process import PostponeShutdown, worker_main
+from .worker_process import PostponeShutdown, worker_main, TestWorker
 from .task import redis_task, get_current_task, Task
 from .exceptions import *
 from .scheduler import crontab, scheduler_main, once_per_day, run_every
