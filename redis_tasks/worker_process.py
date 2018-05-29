@@ -298,7 +298,7 @@ class WorkHorse(multiprocessing.Process):
         os.kill(self.pid, sig)
 
 
-class TestWorker:
+class TWorker:
     def __init__(self, queues=['default']):
         id = str(uuid.uuid4())
         self.worker = Worker(id,
@@ -307,7 +307,7 @@ class TestWorker:
         self.failed = []
         self.succeeded = []
 
-    def run(self):
+    def run(self, raise_on_failure=True):
         self.worker.startup()
         i = 0
         while True:
@@ -327,6 +327,8 @@ class TestWorker:
                 self.succeeded.append(task)
             elif outcome.outcome == 'failure':
                 self.failed.append(task)
+                if raise_on_failure:
+                    raise RuntimeError(f"Task {task.description!r} failed\n" + task.error_message)
             else:
                 raise RuntimeError("Unexpected task outcome")
         return i
