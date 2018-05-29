@@ -28,6 +28,9 @@ class CrontabSchedule:
 
     def get_next(self, after):
         after = local_tz.from_utc(after)
+        # Workaround for bug in croniter
+        # https://github.com/taichino/croniter/issues/105
+        after = after.replace(second=0, microsecond=0)
         iter = croniter.croniter(self.crontab, after, ret_type=datetime.datetime)
         return local_tz.to_utc(iter.get_next())
 
@@ -179,7 +182,7 @@ class Scheduler:
 
                 next_run = min(x.next_run for x in self.schedule)
                 next_heartbeat = now + datetime.timedelta(seconds=HEARTBEAT_FREQ)
-                wait_for = (utcnow() - min(next_run, next_heartbeat)).total_seconds()
+                wait_for = (min(next_run, next_heartbeat) - utcnow()).total_seconds()
                 self.shutdown_requested.wait(wait_for)
         logger.info('redis_tasks scheduler shut down')
 
