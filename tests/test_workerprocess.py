@@ -158,7 +158,6 @@ def test_heartbeats(mocker, stub):
     with pytest.raises(ShutdownRequested):
         wp.run(False)
     task.refresh()
-    print(task.error_message)
     assert task.status == TaskStatus.FINISHED
     assert maintenance.call_count == 1
     assert mock_await.call_count == 5
@@ -180,7 +179,6 @@ def test_process_task(mocker):
 
     execute = mocker.patch.object(WorkerProcess, 'execute_task', side_effect=my_execute)
     wp.process_task(task)
-    print(task.error_message)
     assert task.status == TaskStatus.FINISHED
 
     q.enqueue_call()

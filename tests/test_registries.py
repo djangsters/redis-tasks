@@ -97,7 +97,6 @@ def test_worker_reg_running_tasks():
 
 
 def test_queue_registry(assert_atomic, connection):
-    print(connection.keys())
     registry = registries.queue_registry
     queue1 = QueueFactory()
     queue2 = QueueFactory()

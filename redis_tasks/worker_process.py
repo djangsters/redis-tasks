@@ -301,7 +301,8 @@ class WorkHorse(multiprocessing.Process):
 class TestWorker:
     def __init__(self, queues=['default']):
         id = str(uuid.uuid4())
-        self.worker = Worker(id, queues=queues,
+        self.worker = Worker(id,
+                             queues=[Queue(n) for n in queues],
                              description=f'TestWorker-{id}')
         self.failed = []
         self.succeeded = []
@@ -311,7 +312,6 @@ class TestWorker:
         i = 0
         while True:
             for queue in self.worker.queues:
-                self.maybe_shutdown()
                 task = queue.dequeue(self.worker)
                 if task:
                     break

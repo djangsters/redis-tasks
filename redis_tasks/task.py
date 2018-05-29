@@ -60,7 +60,7 @@ task_stack = TaskStack()
 
 
 def get_current_task():
-    task_stack.peek()
+    return task_stack.peek()
 
 
 class TaskProperties:

@@ -261,7 +261,6 @@ class TestSchedulerEntry:
         se.process(self.time(2))
         assert se.is_enqueued() is True
         assert get_next.call_count == 2
-        print(get_next.call_args_list)
         get_next.assert_any_call(self.time(0))
         get_next.assert_any_call(self.time(2))
         assert se.prev_run == self.time(2)
