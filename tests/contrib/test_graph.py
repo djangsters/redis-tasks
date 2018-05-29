@@ -1,8 +1,9 @@
-import pytest
 import random
-from redis_tasks import Queue
-from redis_tasks import TWorker
-from redis_tasks.contrib.graph import chain, TaskGraph, GraphMiddleware
+
+import pytest
+
+from redis_tasks import Queue, TWorker
+from redis_tasks.contrib.graph import GraphMiddleware, TaskGraph, chain
 
 
 @pytest.fixture

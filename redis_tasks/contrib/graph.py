@@ -2,7 +2,7 @@ import uuid
 
 from redis_tasks import Queue
 from redis_tasks.conf import RedisKey, connection
-from redis_tasks.utils import atomic_pipeline, serialize, deserialize
+from redis_tasks.utils import atomic_pipeline, deserialize, serialize
 
 
 def chain(members):

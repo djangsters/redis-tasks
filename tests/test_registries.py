@@ -4,8 +4,7 @@ from redis_tasks import registries
 from redis_tasks.conf import RedisKey
 from redis_tasks.exceptions import WorkerDoesNotExist
 from redis_tasks.task import TaskOutcome
-from tests.utils import (
-    QueueFactory, Something, TaskFactory, WorkerFactory)
+from tests.utils import QueueFactory, Something, TaskFactory, WorkerFactory
 
 
 def test_expiring_registry(connection, settings, mocker, assert_atomic):
