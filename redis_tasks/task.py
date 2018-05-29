@@ -7,7 +7,7 @@ from contextlib import ExitStack
 
 import redis_tasks
 
-from .conf import RedisKey, connection, settings, task_middlewares
+from .conf import RedisKey, connection, settings, task_middleware
 from .exceptions import (
     InvalidOperation, TaskAborted, TaskDoesNotExist, WorkerShutdown)
 from .registries import failed_task_registry, finished_task_registry
@@ -333,7 +333,7 @@ class Task:
                         run(*args, **kwargs)
                 return mw_run
 
-            for middleware_constructor in reversed(task_middlewares):
+            for middleware_constructor in reversed(task_middleware):
                 run_task = mw_wrapper(middleware_constructor, self, run_task)
 
             try:
@@ -350,7 +350,7 @@ class Task:
     def _generate_outcome(self, *exc_info, may_requeue=True):
         if may_requeue and isinstance(exc_info[1], TaskAborted) and self.is_reentrant:
             return TaskOutcome('requeue')
-        for mwc in reversed(task_middlewares):
+        for mwc in reversed(task_middleware):
             try:
                 middleware = mwc()
                 if not hasattr(middleware, "process_outcome"):

@@ -15,17 +15,17 @@ class RTDjango(AppConfig):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        task_middlewares = getattr(django_settings, SETTINGS_PREFIX + 'TASK_MIDDLEWARES',
-                                   defaults.TASK_MIDDLEWARES)
+        middleware = list(getattr(django_settings, SETTINGS_PREFIX + 'MIDDLEWARE',
+                                  defaults.MIDDLEWARE))
         if any(x.startswith('raven.') for x in django_settings.INSTALLED_APPS):
             mw_path = 'redis_tasks.contrib.sentry.SentryMiddleware'
-            if mw_path not in task_middlewares:
-                task_middlewares.insert(0, mw_path)
+            if mw_path not in middleware:
+                middleware.insert(0, mw_path)
 
         settings.configure(DjangoSettingsProxy(dict(
             SENTRY_INSTANCE="raven.contrib.django.models.client",
             SCHEDULER_TIMEZONE=django_settings.TIME_ZONE,
-            TASK_MIDDLEWARES=task_middlewares,
+            MIDDLEWARE=middleware,
         )))
 
 

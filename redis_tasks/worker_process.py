@@ -11,7 +11,7 @@ from contextlib import ExitStack as nullcontext
 from contextlib import contextmanager
 from datetime import timedelta
 
-from .conf import RedisKey, connection, settings, task_middlewares
+from .conf import RedisKey, connection, settings, task_middleware
 from .exceptions import WorkerShutdown
 from .queue import Queue
 from .registries import registry_maintenance
@@ -103,7 +103,7 @@ class WorkerProcess:
 
         # Basic test of the middleware setup. If this fails, we would rather
         # have the worker fail to start than to fail every job.
-        [x() for x in task_middlewares]
+        [x() for x in task_middleware]
 
         try:
             tasks_processed = 0
