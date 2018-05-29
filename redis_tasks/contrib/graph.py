@@ -104,5 +104,4 @@ class GraphMiddleware:
     @classmethod
     def is_installed(cls):
         from redis_tasks.conf import task_middleware
-        print(task_middleware)
         return any(issubclass(x, cls) for x in task_middleware)

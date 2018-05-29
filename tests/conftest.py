@@ -134,7 +134,7 @@ def time_mocker(mocker):
 def kill_child_processes():
     yield
     for child in multiprocessing.active_children():
-        print(f"Killing left over process {child.name}")
+        print(f"Killing leftover process {child.name}")
         os.kill(child.pid, signal.SIGKILL)
 
 
