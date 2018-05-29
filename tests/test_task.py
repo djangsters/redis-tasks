@@ -276,6 +276,16 @@ def test_persistence(assert_atomic, connection, stub):
     assert as_dict(copy) == as_dict(task)
     assert as_dict(Task.fetch(task.id)) == as_dict(task)
 
+    # save() and save_meta() in same pipeline
+    with assert_atomic():
+        with connection.pipeline() as pipe:
+            task = Task(stub)
+            task._save(pipeline=pipe)
+            task.meta["a"] = "b"
+            task.save_meta(pipeline=pipe)
+            pipe.execute()
+    assert Task.fetch(task.id).meta == {"a": "b"}
+
     task = Task(stub)
     with pytest.raises(TaskDoesNotExist):
         task.refresh()

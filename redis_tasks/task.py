@@ -303,7 +303,7 @@ class Task:
 
     @atomic_pipeline
     def save_meta(self, *, pipeline=None):
-        self._save(['meta'])
+        self._save(['meta'], pipeline=pipeline)
 
     def execute(self, *, shutdown_cm=ExitStack()):
         """Run the task using middleware.
