@@ -28,9 +28,6 @@ class CrontabSchedule:
 
     def get_next(self, after):
         after = local_tz.from_utc(after)
-        # Workaround for bug in croniter
-        # https://github.com/taichino/croniter/issues/105
-        after = after.replace(second=0, microsecond=0)
         iter = croniter.croniter(self.crontab, after, ret_type=datetime.datetime)
         return local_tz.to_utc(iter.get_next())
 
