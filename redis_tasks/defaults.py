@@ -10,6 +10,7 @@ REDIS_PREFIX = "redis_tasks"
 MIDDLEWARE = []
 WORKER_PRELOAD_FUNCTION = None
 WORKER_DESCRIPTION_FUNCTION = "redis_tasks.worker_process.generate_worker_description"
+TIMEZONE = "UTC"
 
 # SCHEDULE is an id -> entry dict. The entries are dicts with the following keys:
 #   task: Import path of the function to be run, e.g. "mymodule.myfunc"
@@ -19,6 +20,5 @@ WORKER_DESCRIPTION_FUNCTION = "redis_tasks.worker_process.generate_worker_descri
 #              multiple times (optional, defaults to True)
 #   queue: Queue to put this task on (optional)
 SCHEDULE = {}
-SCHEDULER_TIMEZONE = "UTC"
 SCHEDULER_QUEUE = 'default'
 SCHEDULER_MAX_CATCHUP = 60 * 60 * 1  # 1 hour

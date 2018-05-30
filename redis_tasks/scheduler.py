@@ -19,7 +19,7 @@ from .utils import (
 
 logger = logging.getLogger(__name__)
 
-local_tz = LazyObject(lambda: DstSmearingTz(settings.SCHEDULER_TIMEZONE))
+local_tz = LazyObject(lambda: DstSmearingTz(settings.TIMEZONE))
 
 
 class CrontabSchedule:

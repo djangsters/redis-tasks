@@ -20,7 +20,7 @@ def iter_schedule(schedule, start, count):
 
 
 def test_crontab_schedule(settings):
-    settings.SCHEDULER_TIMEZONE = "Europe/Berlin"
+    settings.TIMEZONE = "Europe/Berlin"
     tz = pytz.timezone('Europe/Berlin')
     schedule = CrontabSchedule('30 2 * * *')
     start = datetime.datetime(2017, 3, 24, tzinfo=pytz.utc)
@@ -45,7 +45,7 @@ def test_crontab_schedule(settings):
 
 
 def test_periodic_schedule(settings):
-    settings.SCHEDULER_TIMEZONE = "Europe/Berlin"
+    settings.TIMEZONE = "Europe/Berlin"
     tz = pytz.timezone('Europe/Berlin')
 
     # Test transition to DST

@@ -24,7 +24,7 @@ class RTDjango(AppConfig):
 
         settings.configure(DjangoSettingsProxy(dict(
             SENTRY_INSTANCE="raven.contrib.django.models.client",
-            SCHEDULER_TIMEZONE=django_settings.TIME_ZONE,
+            TIMEZONE=django_settings.TIME_ZONE,
             MIDDLEWARE=middleware,
         )))
 
