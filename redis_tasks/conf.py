@@ -15,7 +15,7 @@ class Settings:
     def __init__(self):
         self._initialized = False
 
-    def _configure_from_env(self, setting_name=None):
+    def _configure_from_env(self):
         settings_module = os.environ.get(ENVIRONMENT_VARIABLE)
         if not settings_module:
             raise Exception(
@@ -40,7 +40,7 @@ class Settings:
 
     def __getattr__(self, name):
         if not self._initialized:
-            self._configure_from_env(setting_name=name)
+            self._configure_from_env()
         return self.__dict__[name]
 
     def configure(self, settings):
