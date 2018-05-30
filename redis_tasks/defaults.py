@@ -17,7 +17,7 @@ WORKER_DESCRIPTION_FUNCTION = "redis_tasks.worker_process.generate_worker_descri
 #   args, kwargs: args and kwargs for the tak function (optional)
 #   singleton: Boolean to specify whether this task should not be on the queue
 #              multiple times (optional, defaults to True)
-#   queue: Queue to put this task on (optional
+#   queue: Queue to put this task on (optional)
 SCHEDULE = {}
 SCHEDULER_TIMEZONE = "UTC"
 SCHEDULER_QUEUE = 'default'

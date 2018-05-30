@@ -1,1 +1,3 @@
-recursive-exclude tests *
+exclude .gitignore .isort.cfg .travis.yml
+exclude requirements.in requirements.txt
+include tox.ini

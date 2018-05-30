@@ -18,7 +18,7 @@ setup(
     author='Christian Fersch',
     author_email='christian@djangsters.de',
     description='redis-tasks is a lightweight library for processing background tasks',
-    packages=find_packages(exclude=['tests']),
+    packages=find_packages(),
     include_package_data=True,
     zip_safe=False,
     platforms='any',
