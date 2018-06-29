@@ -106,6 +106,10 @@ class WorkerProcess:
         [x() for x in task_middleware]
 
         try:
+            self.worker.heartbeat()
+            self.maintenance.run_if_neccessary()
+            self.maybe_shutdown()
+
             tasks_processed = 0
             for task in self.queue_iter(burst):
                 self.process_task(task)

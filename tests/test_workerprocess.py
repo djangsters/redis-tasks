@@ -91,7 +91,7 @@ def test_run(settings, mocker, stub):
     wp = WorkerProcess([QueueFactory()])
     assert wp.run(True) == 3
     assert process.call_args_list == [((x, ),) for x in tasks]
-    assert maintenance().run_if_neccessary.call_count == 3
+    assert maintenance().run_if_neccessary.call_count == 4
     assert wp.worker.state == WorkerState.DEAD
 
     settings.WORKER_PRELOAD_FUNCTION = stub.path
@@ -159,7 +159,7 @@ def test_heartbeats(mocker, stub):
         wp.run(False)
     task.refresh()
     assert task.status == TaskStatus.FINISHED
-    assert maintenance.call_count == 1
+    assert maintenance.call_count == 2
     assert mock_await.call_count == 5
     assert mock_join.call_count == 3
     assert stub.mock.called
