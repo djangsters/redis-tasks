@@ -15,12 +15,10 @@ class RTDjango(AppConfig):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        middleware = list(getattr(django_settings, SETTINGS_PREFIX + 'MIDDLEWARE',
-                                  defaults.MIDDLEWARE))
+
+        middleware = list(defaults.MIDDLEWARE)
         if any(x.startswith('raven.') for x in django_settings.INSTALLED_APPS):
-            mw_path = 'redis_tasks.contrib.sentry.SentryMiddleware'
-            if mw_path not in middleware:
-                middleware.insert(0, mw_path)
+            middleware.insert(0, 'redis_tasks.contrib.sentry.SentryMiddleware')
 
         settings.configure(DjangoSettingsProxy(dict(
             SENTRY_INSTANCE="raven.contrib.django.models.client",
