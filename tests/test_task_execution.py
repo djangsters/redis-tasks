@@ -94,7 +94,7 @@ def test_generate_outcome(stub):
 
     try:
         raise TypeError('mytest')
-    except TypeError as e:
+    except TypeError:
         exc_info = sys.exc_info()
     outcome = task._generate_outcome(*exc_info)
     assert outcome.outcome == 'failure'
