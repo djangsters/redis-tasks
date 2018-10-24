@@ -6,6 +6,8 @@ from redis_tasks.cli import main as cli_main
 
 
 class Command:
+    leave_locale_alone = True
+
     def run_from_argv(self, argv):
         """Called when run from the command line."""
         prog_name = "{} {}".format(os.path.basename(argv[0]), argv[1])
