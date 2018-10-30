@@ -83,10 +83,11 @@ class TaskOutcome:
 
 
 class Task:
-    def __init__(self, func=None, args=None, kwargs=None, *, fetch_id=None):
+    def __init__(self, func=None, args=None, kwargs=None, *,
+                 fetch_id=None, fetch_data=None):
         if fetch_id:
             self.id = fetch_id
-            self.refresh()
+            self.refresh(data=fetch_data)
             return
 
         self.id = str(uuid.uuid4())
@@ -255,11 +256,24 @@ class Task:
         if task_ids:
             pipeline.delete(*(cls.key_for(task_id) for task_id in task_ids))
 
-    def refresh(self):
+    @classmethod
+    def fetch_many(cls, task_ids):
+        with connection.pipeline(transaction=False) as pipeline:
+            for task_id in task_ids:
+                pipeline.hgetall(cls.key_for(task_id))
+            results = pipeline.execute()
+        tasks = []
+        for task_id, data in zip(task_ids, results):
+            tasks.append(cls(fetch_id=task_id, fetch_data=data))
+        return tasks
+
+    def refresh(self, data=None):
         key = self.key
-        obj = {k.decode(): v for k, v in connection.hgetall(key).items()}
+        if not data:
+            data = connection.hgetall(self.key)
+        obj = {k.decode(): v for k, v in data.items()}
         if len(obj) == 0:
-            raise TaskDoesNotExist('No such task: {0}'.format(key))
+            raise TaskDoesNotExist('No such task: {0}'.format(self.key))
 
         self.func_name = obj['func_name'].decode()
         self.args = deserialize(obj['args'])
