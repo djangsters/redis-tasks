@@ -268,7 +268,6 @@ class Task:
         return tasks
 
     def refresh(self, data=None):
-        key = self.key
         if not data:
             data = connection.hgetall(self.key)
         obj = {k.decode(): v for k, v in data.items()}
