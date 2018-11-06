@@ -308,3 +308,17 @@ def test_init_save_fetch_delete(connection, assert_atomic, stub):
     assert not connection.exists(t.key)
     with pytest.raises(TaskDoesNotExist):
         Task.fetch(t.id)
+
+
+def test_fetch_many(stub):
+    tasks_data = [{"args": []}, {"args": ["foo"]}, {"args": ["bar"]},
+                  {"args": ["foo", "bar"]}, {"args": []}]
+    tasks = [Task(stub, **d) for d in tasks_data]
+    for t in tasks:
+        t._save()
+
+    fetched = Task.fetch_many([t.id for t in tasks[1:4]])
+    assert len(fetched) == 3
+    for i, task in enumerate(fetched):
+        assert task.id == tasks[i+1].id
+        assert task.args == tasks_data[i+1]["args"]

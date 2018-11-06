@@ -46,7 +46,7 @@ class Queue(object):
                 reversed(connection.lrange(self.key, start, end))]
 
     def get_tasks(self, offset=0, length=-1):
-        return [Task.fetch(x) for x in self.get_task_ids(offset, length)]
+        return Task.fetch_many(self.get_task_ids(offset, length))
 
     @atomic_pipeline
     def enqueue_call(self, *args, pipeline, **kwargs):
