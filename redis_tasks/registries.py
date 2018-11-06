@@ -19,8 +19,8 @@ class ExpiringRegistry:
         return decode_list(connection.zrange(self.key, offset, end))
 
     def get_tasks(self, offset=0, length=-1):
-        task_ids = self.get_task_ids(offset, length)
-        return redis_tasks.task.Task.fetch_many(task_ids)
+        return redis_tasks.task.Task.fetch_many(
+            self.get_task_ids(offset, length))
 
     def empty(self):  # TODO: test
         def transaction(pipeline):
