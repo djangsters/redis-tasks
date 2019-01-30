@@ -318,7 +318,7 @@ def test_signal_shutdown_in_queuewait():
     wp = WorkerProcess([QueueFactory()])
     process = multiprocessing.Process(target=wp.run)
     process.start()
-    time.sleep(0.01)
+    time.sleep(0.1)
     os.kill(process.pid, signal.SIGTERM)
     process.join(1)
     assert not process.is_alive()
