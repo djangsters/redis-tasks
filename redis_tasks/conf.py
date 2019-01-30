@@ -89,8 +89,15 @@ class RTRedis(redis.StrictRedis):
         return self.execute_command('ZADD', name, *pieces)
 
 
-class RTPipeline(redis.client.BasePipeline, RTRedis):
+# Backwards compatibility with redis-py < 3.0.0
+pipeline_base = getattr(redis.client, 'BasePipeline', redis.client.Pipeline)
+
+
+class RTPipeline(pipeline_base, RTRedis):
     pass
+
+
+print(RTPipeline.__mro__)
 
 
 @LazyObject
@@ -106,12 +113,16 @@ def task_middleware():  # TODO: test
     return [middleware_constructor(x) for x in settings.MIDDLEWARE]
 
 
-class RedisKey:
+class RedisKey(redis.connection.Token):
     def __init__(self, name):
         self.name = name
 
     def __str__(self):
         return settings.REDIS_PREFIX + ':' + self.name
+
+    @property
+    def encoded_value(self):
+        return str(self).encode('utf-8')
 
     def __eq__(self, other):
         if not isinstance(other, self.__class__):
