@@ -64,7 +64,7 @@ def decode_dict(dct):
 def is_serializable(obj):
     if obj is None:
         return True
-    if isinstance(obj, (int, str, float, bool, datetime.datetime)):
+    if isinstance(obj, (int, str, float, bool, datetime.date, datetime.datetime)):
         return True
     if isinstance(obj, (tuple, list, set)):
         return all(is_serializable(x) for x in obj)
