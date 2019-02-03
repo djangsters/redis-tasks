@@ -97,9 +97,6 @@ class RTPipeline(pipeline_base, RTRedis):
     pass
 
 
-print(RTPipeline.__mro__)
-
-
 @LazyObject
 def connection():
     return RTRedis.from_url(settings.REDIS_URL)
