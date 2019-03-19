@@ -49,11 +49,14 @@ class ExpiringRegistry:
 
 
 finished_task_registry = ExpiringRegistry('finished')
+finished_long_task_registry = ExpiringRegistry('finished_long')
 failed_task_registry = ExpiringRegistry('failed')
 
 
 def registry_maintenance():
     finished_task_registry.expire()
+    if settings.USE_LONG_TASK_REGISTRY:
+        finished_long_task_registry.expire()
     failed_task_registry.expire()
     worker_registry.handle_died_workers()
 

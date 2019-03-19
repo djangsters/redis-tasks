@@ -22,3 +22,9 @@ TIMEZONE = "UTC"
 SCHEDULE = {}
 SCHEDULER_QUEUE = 'default'
 SCHEDULER_MAX_CATCHUP = 60 * 60 * 1  # 1 hour
+
+# Setting USE_LONG_TASK_REGISTRY = True puts finished long running tasks into
+# an additional ExpiringRegistry so they can be handled separately.
+# Use LONG_TASK_DURATION to define a long running task.
+USE_LONG_TASK_REGISTRY = False
+LONG_TASK_DURATION = 30  # 30 seconds

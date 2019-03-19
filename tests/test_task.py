@@ -4,9 +4,11 @@ import uuid
 
 import pytest
 
+from redis_tasks.conf import settings
 from redis_tasks.exceptions import InvalidOperation, TaskDoesNotExist
 from redis_tasks.registries import (
-    failed_task_registry, finished_task_registry, worker_registry)
+    failed_task_registry, finished_long_task_registry, finished_task_registry,
+    worker_registry)
 from redis_tasks.task import Task, TaskOutcome, TaskStatus, redis_task
 from redis_tasks.utils import decode_list
 from tests.utils import QueueFactory, WorkerFactory
@@ -322,3 +324,28 @@ def test_fetch_many(stub):
     for i, task in enumerate(fetched):
         assert task.id == tasks[i+1].id
         assert task.args == tasks_data[i+1]["args"]
+
+
+def test_long_task_finished(stub, time_mocker):
+    time = time_mocker('redis_tasks.task.utcnow')
+    worker = WorkerFactory()
+    queue = QueueFactory()
+    worker.startup()
+    settings.USE_LONG_TASK_REGISTRY = True
+
+    long_task = Task(stub)
+    long_task.enqueue(queue)
+    long_task = queue.dequeue(worker)
+    worker.start_task(long_task)
+    time.step(settings.LONG_TASK_DURATION)
+    worker.end_task(long_task, TaskOutcome("success"))
+
+    short_task = Task(stub)
+    short_task.enqueue(queue)
+    short_task = queue.dequeue(worker)
+    worker.start_task(short_task)
+    time.step(settings.LONG_TASK_DURATION - 1)
+    worker.end_task(short_task, TaskOutcome("success"))
+
+    assert finished_long_task_registry.get_task_ids() == [long_task.id]
+    assert finished_task_registry.get_task_ids() == [long_task.id, short_task.id]

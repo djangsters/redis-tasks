@@ -10,7 +10,8 @@ import redis_tasks
 from .conf import RedisKey, connection, settings, task_middleware
 from .exceptions import (
     InvalidOperation, TaskAborted, TaskDoesNotExist, WorkerShutdown)
-from .registries import failed_task_registry, finished_task_registry
+from .registries import (
+    failed_task_registry, finished_long_task_registry, finished_task_registry)
 from .utils import (
     LazyObject, atomic_pipeline, deserialize, enum, generate_callstring,
     import_attribute, serialize, utcformat, utcnow, utcparse)
@@ -171,10 +172,13 @@ class Task:
     def set_finished(self, *, pipeline):
         assert self.status == TaskStatus.RUNNING
         logger.info(f"Task {self.description} [{self.id}] finished")
-        finished_task_registry.add(self, pipeline=pipeline)
         self.status = TaskStatus.FINISHED
         self.ended_at = utcnow()
         self._save(['status', 'ended_at'], pipeline=pipeline)
+        finished_task_registry.add(self, pipeline=pipeline)
+        if (settings.USE_LONG_TASK_REGISTRY and
+                (self.ended_at - self.started_at).seconds >= settings.LONG_TASK_DURATION):
+            finished_long_task_registry.add(self, pipeline=pipeline)
 
     @atomic_pipeline
     def set_failed(self, error_message, *, pipeline):
