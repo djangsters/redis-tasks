@@ -6,15 +6,22 @@
 #
 attrs==18.1.0             # via pytest
 click==6.7
+coverage==5.0.4           # via pytest-cov
 croniter==0.3.22
 first==2.0.1              # via pip-tools
+importlib-metadata==1.5.0  # via pluggy, pytest
 more-itertools==4.1.0     # via pytest
+packaging==20.3           # via pytest
 pip-tools==2.0.2
-pluggy==0.6.0             # via pytest
+pluggy==0.13.1            # via pytest
 py==1.5.3                 # via pytest
+pyparsing==2.4.6          # via packaging
+pytest-cov==2.8.1
 pytest-mock==1.10.0
-pytest==3.5.1
+pytest==5.4.1
 python-dateutil==2.7.3    # via croniter
 pytz==2018.4
 redis==2.10.6
-six==1.11.0               # via more-itertools, pip-tools, pytest, python-dateutil
+six==1.11.0               # via more-itertools, packaging, pip-tools, python-dateutil
+wcwidth==0.1.9            # via pytest
+zipp==3.1.0               # via importlib-metadata

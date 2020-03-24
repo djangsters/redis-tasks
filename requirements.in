@@ -1,7 +1,9 @@
 redis
 click
-pytest
-pytest-mock
 pip-tools
 croniter
 pytz
+
+pytest
+pytest-mock
+pytest-cov
