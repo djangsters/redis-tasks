@@ -1,12 +1,14 @@
-sudo: false
 language: python
+os: linux
+dist: "bionic"
 services:
   - redis
 python:
   - "3.6"
 install:
+  - pip install -r requirements.txt
   - pip install -e .
-  - pip install --upgrade pytest pytest-cov coveralls pytest-mock flake8 flake8-isort
+  - pip install pytest-cov coveralls flake8 flake8-isort
 script:
   - pytest --cov redis_tasks --run-slow
   - flake8 .
