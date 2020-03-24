@@ -19,7 +19,7 @@ def pytest_addoption(parser):
 
 @pytest.hookimpl(tryfirst=True)
 def pytest_runtest_setup(item):
-    if not pytest.config.getoption("--run-slow"):
+    if not item.config.getoption("--run-slow"):
         if item.keywords.get('slow'):
             pytest.skip("Test is marked as slow")
 

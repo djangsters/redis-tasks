@@ -7,3 +7,6 @@ pytz
 pytest
 pytest-mock
 pytest-cov
+
+flake8
+flake8-isort
