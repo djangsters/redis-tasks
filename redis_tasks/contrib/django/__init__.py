@@ -3,8 +3,8 @@ from itertools import chain
 from django.apps import AppConfig
 from django.conf import settings as django_settings
 
-from ...conf import settings
 from ... import defaults
+from ...conf import settings
 
 SETTINGS_PREFIX = 'RT_'
 
