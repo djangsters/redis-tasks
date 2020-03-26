@@ -5,30 +5,29 @@
 #    pip-compile --output-file requirements.txt requirements.in
 #
 attrs==18.1.0             # via pytest
-click==6.7
+click==7.1.1              # via -r requirements.in, pip-tools
 coverage==5.0.4           # via pytest-cov
-croniter==0.3.22
+croniter==0.3.22          # via -r requirements.in
 entrypoints==0.3          # via flake8
-first==2.0.1              # via pip-tools
-flake8-isort==2.9.0
-flake8==3.7.9
+flake8-isort==2.9.0       # via -r requirements.in
+flake8==3.7.9             # via -r requirements.in, flake8-isort
 importlib-metadata==1.5.0  # via pluggy, pytest
 isort[pyproject]==4.3.21  # via flake8-isort
 mccabe==0.6.1             # via flake8
 more-itertools==4.1.0     # via pytest
 packaging==20.3           # via pytest
-pip-tools==2.0.2
+pip-tools==4.5.1          # via -r requirements.in
 pluggy==0.13.1            # via pytest
 py==1.5.3                 # via pytest
 pycodestyle==2.5.0        # via flake8
 pyflakes==2.1.1           # via flake8
 pyparsing==2.4.6          # via packaging
-pytest-cov==2.8.1
-pytest-mock==1.10.0
-pytest==5.4.1
+pytest-cov==2.8.1         # via -r requirements.in
+pytest-mock==1.10.0       # via -r requirements.in
+pytest==5.4.1             # via -r requirements.in, pytest-cov, pytest-mock
 python-dateutil==2.7.3    # via croniter
-pytz==2018.4
-redis==2.10.6
+pytz==2018.4              # via -r requirements.in
+redis==2.10.6             # via -r requirements.in
 six==1.11.0               # via more-itertools, packaging, pip-tools, python-dateutil
 testfixtures==6.14.0      # via flake8-isort
 toml==0.10.0              # via isort
