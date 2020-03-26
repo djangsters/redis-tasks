@@ -69,14 +69,16 @@ def clear_redis():
 
 
 def do_clear_redis():
+    from redis_tasks import conf
     with conf.connection.pipeline() as pipeline:
-        for key in conf.connection.scan_iter(conf.RedisKey('*')):
+        for key in conf.connection.scan_iter(conf.construct_redis_key('*')):
             pipeline.delete(key)
         pipeline.execute()
 
 
 @pytest.fixture(scope="function")
 def connection():
+    from redis_tasks import conf
     yield conf.connection
 
 
@@ -100,6 +102,7 @@ class AtomicRedis:
 
 @pytest.fixture(scope="function")
 def assert_atomic(mocker):
+    from redis_tasks import conf
     @contextmanager
     def cm(*, exceptions=[]):
         real_connection = conf.connection._wrapped

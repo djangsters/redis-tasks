@@ -1,7 +1,7 @@
 import uuid
 
 from redis_tasks import Queue
-from redis_tasks.conf import RedisKey, connection
+from redis_tasks.conf import connection, construct_redis_key
 from redis_tasks.utils import atomic_pipeline, deserialize, serialize
 
 
@@ -19,7 +19,7 @@ def chain(members):
 class TaskGraph:
     def __init__(self, id=None):
         self.id = id or str(uuid.uuid4())
-        self.key = RedisKey(f"ston.graph:{self.id}")
+        self.key = construct_redis_key(f"ston.graph:{self.id}")
         self.nodes = []
         self.edges = set()
 

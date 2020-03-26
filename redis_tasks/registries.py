@@ -1,13 +1,13 @@
 import redis_tasks
 
-from .conf import RedisKey, connection, settings
+from .conf import connection, construct_redis_key, settings
 from .exceptions import WorkerDoesNotExist
-from .utils import atomic_pipeline, decode_list
+from .utils import LazyObject, atomic_pipeline, decode_list
 
 
 class ExpiringRegistry:
     def __init__(self, name):
-        self.key = RedisKey(name + '_tasks')
+        self.key = construct_redis_key(name + '_tasks')
 
     @atomic_pipeline
     def add(self, task, *, pipeline):
@@ -48,8 +48,8 @@ class ExpiringRegistry:
         connection.transaction(transaction, self.key)
 
 
-finished_task_registry = ExpiringRegistry('finished')
-failed_task_registry = ExpiringRegistry('failed')
+finished_task_registry = LazyObject(lambda: ExpiringRegistry('finished'))
+failed_task_registry = LazyObject(lambda: ExpiringRegistry('failed'))
 
 
 def registry_maintenance():
@@ -60,7 +60,7 @@ def registry_maintenance():
 
 class WorkerRegistry:
     def __init__(self):
-        self.key = RedisKey('workers')
+        self.key = construct_redis_key('workers')
 
     @atomic_pipeline
     def add(self, worker, *, pipeline):
@@ -83,7 +83,7 @@ class WorkerRegistry:
 
     def get_running_tasks(self):
         """Returns a worker_id -> task_id dict"""
-        task_key_prefix = RedisKey('worker_task:')
+        task_key_prefix = construct_redis_key('worker_task:')
         lua = connection.register_script("""
             local workers_key, task_key_prefix = unpack(KEYS)
             local worker_ids = redis.call("ZRANGE", workers_key, 0, -1)
@@ -114,12 +114,12 @@ class WorkerRegistry:
             self.key, '-inf', oldest_valid))
 
 
-worker_registry = WorkerRegistry()
+worker_registry = LazyObject(lambda: WorkerRegistry())
 
 
 class QueueRegistry:
     def __init__(self):
-        self.key = RedisKey('queues')
+        self.key = construct_redis_key('queues')
 
     def get_names(self):
         return decode_list(connection.smembers(self.key))
@@ -133,4 +133,4 @@ class QueueRegistry:
         pipeline.srem(self.key, queue.name)
 
 
-queue_registry = QueueRegistry()
+queue_registry = LazyObject(lambda: QueueRegistry())
