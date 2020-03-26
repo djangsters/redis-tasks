@@ -89,11 +89,7 @@ class RTRedis(redis.StrictRedis):
         return self.execute_command('ZADD', name, *pieces)
 
 
-# Backwards compatibility with redis-py < 3.0.0
-pipeline_base = getattr(redis.client, 'BasePipeline', redis.client.Pipeline)
-
-
-class RTPipeline(pipeline_base, RTRedis):
+class RTPipeline(redis.client.Pipeline, RTRedis):
     pass
 
 
