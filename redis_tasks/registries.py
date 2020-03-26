@@ -114,7 +114,7 @@ class WorkerRegistry:
             self.key, '-inf', oldest_valid))
 
 
-worker_registry = LazyObject(lambda: WorkerRegistry())
+worker_registry = LazyObject(WorkerRegistry)
 
 
 class QueueRegistry:
@@ -133,4 +133,4 @@ class QueueRegistry:
         pipeline.srem(self.key, queue.name)
 
 
-queue_registry = LazyObject(lambda: QueueRegistry())
+queue_registry = LazyObject(QueueRegistry)
