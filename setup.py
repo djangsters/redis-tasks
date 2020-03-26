@@ -23,7 +23,7 @@ setup(
     zip_safe=False,
     platforms='any',
     python_requires='>=3.6',
-    install_requires=['redis >=2.10.0, <4.0.0',
+    install_requires=['redis >=3.2.0',
                       'click',
                       'croniter >=0.3.23',
                       'pytz'],
