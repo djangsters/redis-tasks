@@ -23,7 +23,7 @@ pycodestyle==2.5.0        # via flake8
 pyflakes==2.1.1           # via flake8
 pyparsing==2.4.6          # via packaging
 pytest-cov==2.8.1         # via -r requirements.in
-pytest-mock==1.10.0       # via -r requirements.in
+pytest-mock==2.0.0        # via -r requirements.in
 pytest==5.4.1             # via -r requirements.in, pytest-cov, pytest-mock
 python-dateutil==2.7.3    # via croniter
 pytz==2018.4              # via -r requirements.in
