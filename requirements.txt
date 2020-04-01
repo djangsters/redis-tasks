@@ -7,7 +7,7 @@
 attrs==18.1.0             # via pytest
 click==7.1.1              # via -r requirements.in, pip-tools
 coverage==5.0.4           # via pytest-cov
-croniter==0.3.22          # via -r requirements.in
+croniter==0.3.31          # via -r requirements.in
 entrypoints==0.3          # via flake8
 flake8-isort==2.9.0       # via -r requirements.in
 flake8==3.7.9             # via -r requirements.in, flake8-isort
