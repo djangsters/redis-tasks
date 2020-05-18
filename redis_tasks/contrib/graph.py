@@ -19,7 +19,7 @@ def chain(members):
 class TaskGraph:
     def __init__(self, id=None):
         self.id = id or str(uuid.uuid4())
-        self.key = RedisKey(f"ston.graph:{self.id}")
+        self.key = RedisKey(f"graph:{self.id}")
         self.nodes = []
         self.edges = set()
 
