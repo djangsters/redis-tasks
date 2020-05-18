@@ -5,7 +5,7 @@
 #    pip-compile --output-file requirements.txt requirements.in
 #
 attrs==18.1.0             # via pytest
-click==7.1.1              # via -r requirements.in, pip-tools
+click==7.1.2              # via -r requirements.in, pip-tools
 coverage==5.0.4           # via pytest-cov
 croniter==0.3.31          # via -r requirements.in
 entrypoints==0.3          # via flake8
