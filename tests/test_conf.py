@@ -28,9 +28,6 @@ def test_mock_settings_after(settings):
     assert settings.DEFAULT_TASK_TIMEOUT != "foo"
 
 
-def test_RedisKey(settings):
-    rk = conf.RedisKey("foo")
+def test_construct_redis_key(settings):
     settings.REDIS_PREFIX = "bar"
-    assert str(rk) == "bar:foo"
-    settings.REDIS_PREFIX = "zoo"
-    assert str(rk) == "zoo:foo"
+    assert conf.construct_redis_key("foo") == "bar:foo"
