@@ -11,7 +11,7 @@ from contextlib import ExitStack as nullcontext
 from contextlib import contextmanager
 from datetime import timedelta
 
-from .conf import RedisKey, connection, settings, task_middleware
+from .conf import connection, construct_redis_key, settings, task_middleware
 from .exceptions import WorkerShutdown
 from .queue import Queue
 from .registries import registry_maintenance
@@ -238,7 +238,7 @@ class WorkerProcess:
 class Maintenance:
     def __init__(self):
         self.last_run_at = None
-        self.key = RedisKey('last_maintenance')
+        self.key = construct_redis_key('last_maintenance')
 
     def run_if_neccessary(self):
         if (self.last_run_at and

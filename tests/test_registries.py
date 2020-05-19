@@ -1,7 +1,7 @@
 import pytest
 
 from redis_tasks import registries
-from redis_tasks.conf import RedisKey
+from redis_tasks.conf import construct_redis_key
 from redis_tasks.exceptions import WorkerDoesNotExist
 from redis_tasks.task import TaskOutcome
 from tests.utils import QueueFactory, Something, TaskFactory, WorkerFactory
@@ -14,7 +14,7 @@ def test_expiring_registry(connection, settings, mocker, assert_atomic):
     settings.EXPIRING_REGISTRIES_TTL = 10
     delete_tasks = mocker.patch('redis_tasks.task.Task.delete_many')
 
-    assert registry.key == RedisKey('testexpire_tasks')
+    assert registry.key == construct_redis_key('testexpire_tasks')
 
     timestamp = mocker.patch('redis_tasks.conf.RTRedis.time')
     timestamp.return_value = (1000, 0)

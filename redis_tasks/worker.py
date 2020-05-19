@@ -1,7 +1,7 @@
 import logging
 from operator import attrgetter
 
-from .conf import RedisKey, connection, settings
+from .conf import connection, construct_redis_key, settings
 from .exceptions import WorkerDoesNotExist
 from .queue import Queue
 from .registries import worker_registry
@@ -31,8 +31,8 @@ class Worker:
     def __init__(self, id=None, *, description=None, queues=None,
                  fetch_id=None):
         self.id = id or fetch_id
-        self.key = RedisKey('worker:' + self.id)
-        self.task_key = RedisKey('worker_task:' + self.id)
+        self.key = construct_redis_key('worker:' + self.id)
+        self.task_key = construct_redis_key('worker_task:' + self.id)
 
         if fetch_id:
             self.refresh()

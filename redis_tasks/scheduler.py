@@ -9,7 +9,7 @@ from contextlib import suppress
 
 import croniter
 
-from .conf import RedisKey, connection, settings
+from .conf import connection, construct_redis_key, settings
 from .exceptions import TaskDoesNotExist
 from .queue import Queue
 from .smear_dst import DstSmearingTz
@@ -80,7 +80,7 @@ run_every = PeriodicSchedule
 class SchedulerEntry:
     def __init__(self, id, config):
         self.id = id
-        self.key = RedisKey(f"schedule_entry:{self.id}")
+        self.key = construct_redis_key(f"schedule_entry:{self.id}")
         self.singleton = config.get('singleton', True)
         self.task_template = [config['task'],
                               config.get('args', ()), config.get('kwargs', {})]
@@ -192,7 +192,7 @@ class Mutex(object):
     expire_script = None
 
     def __init__(self, *, timeout):
-        self.key = RedisKey('scheduler')
+        self.key = construct_redis_key('scheduler')
         self.timeout = timeout
         self.token = None
 
