@@ -39,8 +39,15 @@ TBD
 
 .. toctree::
    :maxdepth: 2
+   :caption: Contents:
 
    settings
+
+.. toctree::
+   :maxdepth: 2
+   :caption: API Docs:
+
+   modules
 
 
 Indices and tables
