@@ -1,4 +1,4 @@
-from .conf import RedisKey, connection
+from .conf import connection, construct_redis_key
 from .exceptions import TaskDoesNotExist
 from .registries import queue_registry
 from .task import Task
@@ -8,11 +8,11 @@ from .utils import atomic_pipeline, decode_list
 class Queue(object):
     def __init__(self, name='default'):
         self.name = name
-        self.key = RedisKey('queue:' + name)
+        self.key = construct_redis_key('queue:' + name)
         # We use a separate key for the workers to wait on, as we need to do a
         # multi-key blocking rpop on it, and redis does not have a variant of
         # that operation that is not at risk of losing tasks.
-        self.unblock_key = RedisKey('unblock_queue:' + name)
+        self.unblock_key = construct_redis_key('unblock_queue:' + name)
 
     @classmethod
     def all(cls):
@@ -103,7 +103,7 @@ class Queue(object):
         """Blocks until one of the passed queues contains a tasks.
 
         Return the queue that contained a task or None if `timeout` was reached."""
-        queue_map = {str(q.unblock_key): q for q in queues}
+        queue_map = {q.unblock_key: q for q in queues}
         result = connection.brpop(queue_map.keys(), timeout)
         if result is None:
             return None

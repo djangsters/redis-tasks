@@ -7,7 +7,7 @@ from contextlib import ExitStack
 
 import redis_tasks
 
-from .conf import RedisKey, connection, settings, task_middleware
+from .conf import connection, construct_redis_key, settings, task_middleware
 from .exceptions import (
     InvalidOperation, TaskAborted, TaskDoesNotExist, WorkerShutdown)
 from .registries import failed_task_registry, finished_task_registry
@@ -137,7 +137,7 @@ class Task:
 
     @classmethod
     def key_for(cls, task_id):
-        return RedisKey('task:' + task_id)
+        return construct_redis_key('task:' + task_id)
 
     @atomic_pipeline
     def enqueue(self, queue, *, pipeline):
