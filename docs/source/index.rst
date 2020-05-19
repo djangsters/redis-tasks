@@ -12,6 +12,14 @@ It's able to provide reliable tasks execution for long
 running tasks even in environments, where it's expected
 that workers can be restarted at any time, like heroku.
 
+Disclaimer
+----------
+`redis-tasks` does not store any kind of task results.
+It's your tasks' code responsibility to store task results
+using a persistence layer of your choice if needed.
+
+
+
 Quickstart Guide
 ================
 
