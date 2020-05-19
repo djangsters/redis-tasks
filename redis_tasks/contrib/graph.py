@@ -66,7 +66,7 @@ class TaskGraph:
             queue = Queue(node.task.pop('queue', "default"))
             task = queue.enqueue_call(**node.task, pipeline=pipeline)
             node.task = None
-            task.meta["ston.graph"] = self.id
+            task.meta["graph"] = self.id
             task.save_meta(pipeline=pipeline)
             node.task_id = task.id
 
