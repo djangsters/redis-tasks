@@ -1,16 +1,3 @@
-Installation
-============
-
-Your can install redis tasks using pip like this::
-
-    $ pip install redis-tasks
-
-Or add `redis-tasks` to your requirements.in/.txt
-
-You have to set the :envvar:`RT_SETTINGS_MODULE` or manually
-call `settings.configure()` passing in a settings module
-before you can use redis-tasks in your code.
-
 Settings
 ========
 

@@ -18,6 +18,18 @@ Disclaimer
 It's your tasks' code responsibility to store task results
 using a persistence layer of your choice if needed.
 
+Installation
+============
+
+Your can install `redis-tasks` using pip like this::
+
+    $ pip install redis-tasks
+
+Or add `redis-tasks` to your requirements.in/.txt
+
+You'll have to set the :envvar:`RT_SETTINGS_MODULE` or manually
+call `settings.configure()` passing in a python settings module
+before you can use redis-tasks in your code.
 
 
 Quickstart Guide
@@ -28,7 +40,7 @@ TBD
 .. toctree::
    :maxdepth: 2
 
-   installation_and_settings
+   settings
 
 
 Indices and tables
