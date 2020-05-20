@@ -81,6 +81,6 @@ same approach as above but instead of declaring ``run_task`` method you name it
          s.send_message(msg)
          s.quit()
 
-And again you don't have the result of the task here. If you want to 
-activate this middleware you need to declare it in `rt_settings` the 
-same way as the previous one.
+And again you don't have the result of the task here. You should either use
+database, filesystem or even remote resource. By adding it to
+``rt_settings`` you are making it active, just like the first example.
