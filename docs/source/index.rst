@@ -26,14 +26,13 @@ How it works
 The Middleware
 ---------------
 
-As you know a middleware is a piece of code which is sitting between some kind of 
-request and the actual code that is going to be executed and ``redis-tasks`` is no 
+A middleware is a piece of code which is sitting between some kind of request 
+and the actual code that is going to be executed and ``redis-tasks`` is no 
 exception. Just before the actual running, the framework passes the task as first
-class function to the middleware. This means that the worker had processed the
-information from the ``Queue``, gotten the task and its arguments and created a 
-middleware instance. And then you are responsible for manually calling your
-task. 
-
+class function to the middleware. That means the worker had processed the
+information from the ``Queue`` already, gotten the task and its arguments and created a 
+middleware instance. Then it calls a method of this instance with appropriate 
+information. You are left on your own when and how to run the task.
 
 In the following example we've created a middleware for delaying the task 
 execution:
