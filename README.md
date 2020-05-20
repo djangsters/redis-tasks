@@ -10,4 +10,5 @@ tasks. Built-in `SIGTERM` signal handling makes it a great choice for a task
 manager running on Heroku. Out-of-the-box provided task scheduler with a 
 user-friendly interface makes periodic task management easy and scalable.
 
-For more information and usage instructions, see our documentation.
+For more information and usage instructions, see our [documentation](
+https://redis-tasks.readthedocs.io/en/latest/).
