@@ -2,6 +2,7 @@
 
 [![Build Status](https://travis-ci.com/djangsters/redis-tasks.svg?branch=master)](https://travis-ci.com/djangsters/redis-tasks)
 [![Coverage Status](https://coveralls.io/repos/github/djangsters/redis-tasks/badge.svg?branch=master)](https://coveralls.io/github/djangsters/redis-tasks?branch=master)
+[![Documentation Status](https://readthedocs.org/projects/redis-tasks/badge/?version=latest)](https://redis-tasks.readthedocs.io/en/latest/?badge=latest)
 [![PyPI version](https://badge.fury.io/py/redis-tasks.svg)](https://badge.fury.io/py/redis-tasks)
 ![PyPI - Python Version](https://img.shields.io/pypi/pyversions/redis-tasks)
 
