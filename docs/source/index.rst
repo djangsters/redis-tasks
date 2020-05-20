@@ -7,10 +7,10 @@ Welcome to redis-tasks' documentation!
 =======================================
 
 Redis tasks is a framework for background tasks execution.
-It uses redis for it's shared resources like queues.
+It uses redis for its shared resources like queues.
 It's able to provide reliable tasks execution for long
 running tasks even in environments, where it's expected
-that workers can be restarted at any time, like heroku.
+that workers can be restarted at any time, like Heroku.
 
 Disclaimer
 ----------
@@ -25,9 +25,7 @@ Your can install `redis-tasks` using pip like this::
 
     $ pip install redis-tasks
 
-Or add `redis-tasks` to your requirements.in/.txt
-
-You'll have to set the :envvar:`RT_SETTINGS_MODULE` or manually
+You have to either set the :envvar:`RT_SETTINGS_MODULE` or manually
 call `settings.configure()` passing in a python settings module
 before you can use redis-tasks in your code.
 
