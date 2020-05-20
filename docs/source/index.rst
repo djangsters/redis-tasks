@@ -135,8 +135,15 @@ And the worker will log the following messages when it starts/finishes the task 
 
 .. toctree::
    :maxdepth: 2
+   :caption: Contents:
 
    settings
+
+.. toctree::
+   :maxdepth: 2
+   :caption: API Docs:
+
+   modules
 
 
 Indices and tables
