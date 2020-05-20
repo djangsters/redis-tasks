@@ -10,7 +10,7 @@ Welcome to redis-tasks's documentation!
    :maxdepth: 2
    :caption: Contents:
 
-
+   taskgraph
 
 Indices and tables
 ==================
