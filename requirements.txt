@@ -13,12 +13,11 @@ click==7.1.2              # via -r requirements.in, pip-tools
 coverage==5.0.4           # via pytest-cov
 croniter==0.3.31          # via -r requirements.in
 docutils==0.16            # via sphinx
-entrypoints==0.3          # via flake8
 flake8-isort==3.0.0       # via -r requirements.in
-flake8==3.7.9             # via -r requirements.in, flake8-isort
+flake8==3.8.2             # via -r requirements.in, flake8-isort
 idna==2.9                 # via requests
 imagesize==1.2.0          # via sphinx
-importlib-metadata==1.5.0  # via pluggy, pytest
+importlib-metadata==1.5.0  # via flake8, pluggy, pytest
 isort[pyproject]==4.3.21  # via flake8-isort
 jinja2==2.11.2            # via sphinx
 markupsafe==1.1.1         # via jinja2
@@ -28,8 +27,8 @@ packaging==20.3           # via pytest, sphinx
 pip-tools==5.1.2          # via -r requirements.in
 pluggy==0.13.1            # via pytest
 py==1.5.3                 # via pytest
-pycodestyle==2.5.0        # via flake8
-pyflakes==2.1.1           # via flake8
+pycodestyle==2.6.0        # via flake8
+pyflakes==2.2.0           # via flake8
 pygments==2.6.1           # via sphinx
 pyparsing==2.4.6          # via packaging
 pytest-cov==2.8.1         # via -r requirements.in
