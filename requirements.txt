@@ -36,7 +36,7 @@ pytest-cov==2.8.1         # via -r requirements.in
 pytest-mock==3.1.0        # via -r requirements.in
 pytest==5.4.2             # via -r requirements.in, pytest-cov, pytest-mock
 python-dateutil==2.7.3    # via croniter
-pytz==2019.3              # via -r requirements.in, babel
+pytz==2020.1              # via -r requirements.in, babel
 redis==3.5.2              # via -r requirements.in
 requests==2.23.0          # via sphinx
 six==1.11.0               # via more-itertools, packaging, pip-tools, python-dateutil
