@@ -30,7 +30,7 @@ author = 'Christian Fersch'
 # ones.
 extensions = [
     'sphinx.ext.autodoc',
-    'sphinx.ext.autosectionlabel',
+    'sphinx_click.ext',
 ]
 
 # Add any paths that contain templates here, relative to this directory.

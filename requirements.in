@@ -12,3 +12,4 @@ flake8
 flake8-isort
 
 sphinx
+sphinx-click
