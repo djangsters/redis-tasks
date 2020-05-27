@@ -10,6 +10,8 @@ Welcome to redis-tasks's documentation!
    :maxdepth: 2
    :caption: Contents:
 
+   redis_tasks.cli
+
 
 
 Indices and tables
