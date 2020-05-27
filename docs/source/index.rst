@@ -134,6 +134,7 @@ And the worker will log the following messages when it starts/finishes the task 
 
    settings
    scheduler
+   middleware
 
 
 .. toctree::
@@ -141,7 +142,6 @@ And the worker will log the following messages when it starts/finishes the task 
    :caption: API Docs:
 
    modules
-
 
 Indices and tables
 ==================
