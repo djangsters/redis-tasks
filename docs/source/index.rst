@@ -133,6 +133,8 @@ And the worker will log the following messages when it starts/finishes the task 
    :caption: Contents:
 
    settings
+   scheduler
+
 
 .. toctree::
    :maxdepth: 2
