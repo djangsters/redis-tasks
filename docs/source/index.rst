@@ -9,7 +9,7 @@ that workers can be restarted at any time, like Heroku.
 
 Disclaimer
 ----------
-`redis-tasks` does not store any kind of task results.
+``redis-tasks`` does not store any kind of task results.
 It's your tasks' code responsibility to store task results
 using a persistence layer of your choice if needed.
 
@@ -19,6 +19,8 @@ Installation
 Your can install `redis-tasks` using pip like this::
 
     $ pip install redis-tasks
+
+.. note:: ``redis-tasks`` only runs on python versions 3.6 and above.
 
 You have to either set the :envvar:`RT_SETTINGS_MODULE` or manually
 call `settings.configure()` passing in a python settings module
@@ -66,7 +68,7 @@ You should see a message that the worker started successfully::
 4. Using an ipython shell or whereever needed in your code, you can
    now enqueue this tasks to be executed by the worker at any time like this:
 
-.. note:: Make sure that your the python process is also started with the same ENV VARS as the worker process, see export calls in step 3.
+.. note:: Make sure that the python process is also started with the same ENV VARS as the worker process, see export calls in step 3.
 
 .. code:: python
 
