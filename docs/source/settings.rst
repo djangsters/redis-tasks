@@ -11,35 +11,36 @@ Available Settings
 
     :default: "redis://127.0.0.1:6379"
 
-    A URL of the redis instance to be used by redis-tasks.
+    A URL of the redis instance to be used by ``redis-tasks``.
 
 .. attribute:: REDIS_PREFIX
 
     :default: "redis_tasks"
 
-    A redis key prefix, that will be used as a namespace for all redis keys used by redis-tasks.
+    A redis key prefix, that will be used as a namespace for all redis keys used by ``redis-tasks``.
 
 .. attribute:: TIMEZONE
 
     :default: "UTC"
 
     Timezone to be used by the scheduler.
-    The timezone string must be understood by `pytz`
+    The timezone string must be understood by ``pytz``
 
 .. attribute:: DEFAULT_TASK_TIMEOUT
 
     :default: 86400  # one day
 
     Default for maximum number of seconds a task is allowed to be executed.
-    Can be overridden on a per task level using timeout argument of `@redis_task` decorator
+    Can be overridden on a per task level using timeout argument of 
+    :py:func:`redis_tasks.task.redis_task` decorator
     Workhorse processes executing a task for longer than this amount of seconds
-    will be killed using 9/SIGKILL signal.
+    will be killed using ``9``/``SIGKILL`` signal.
 
 .. attribute:: EXPIRING_REGISTRIES_TTL
 
     :default: 604800  # 7 days
 
-    Registries are used for tracking successfully (`finished`) or unsuccessfully ('failed')
+    Registries are used for tracking successfully ``[finished]`` or unsuccessfully ``[failed]``
     processed tasks and allow to inspect the history.
     After the amount of seconds defined in this setting, the entries will expire.
     Thus this is the maximum time length for which task processing history is available.
@@ -68,27 +69,31 @@ Available Settings
 
     :default: []  # empty list
 
-    A list of middlewares to used, supplied as importable python dotted path strings
+    A list of task middlewares, supplied as importable python dotted path strings
+
+    For more details on ``MIDDLEWARE`` configuration see :doc:`middleware`
 
 .. attribute:: SCHEDULE
 
     :default: {}  # empty dict
 
-    `SCHEDULE` is the main configuration of tasks that should be run by the
+    ``SCHEDULE`` is the main configuration of tasks that should be run by the
     the scheduler regularly.
 
-    It is an `id` -> `entry` dict.
+    It is an ``id`` -> ``entry`` dict.
     The entries are dicts with the following keys:
 
-    `task`: Import path of the function to be run, e.g. "mymodule.myfunc"
+    ``task``: Import path of the function to be run, e.g. "mymodule.myfunc"
 
-    `schedule`: Schedule for this task, e.g. crontab("2 4 * * mon,fri")
+    ``schedule``: Schedule for this task, e.g. crontab("2 4 * * mon,fri")
 
-    `args`, `kwargs`: args and kwargs for the tak function (optional)
+    ``args``, ``kwargs``: args and kwargs for the task function (optional)
 
-    `singleton`: Boolean to specify whether this task should not be on the queue multiple times (optional, defaults to True)
+    ``singleton``: Boolean to specify whether this task should not be on the queue multiple times (optional, defaults to True)
 
-    `queue`: Queue to put this task on (optional)
+    ``queue``: Queue to put this task on (optional)
+
+    For more details on ``SCHEDULE`` configuration see :doc:`scheduler`
 
 .. attribute:: SCHEDULER_QUEUE
 

@@ -1,11 +1,11 @@
 Welcome to redis-tasks' documentation!
 =======================================
 
-Redis tasks is a framework for background tasks execution.
+``redis tasks`` is a framework for background tasks execution.
 It uses redis for its shared resources like queues.
 It's able to provide reliable tasks execution for long
 running tasks even in environments, where it's expected
-that workers can be restarted at any time, like Heroku.
+that workers can be restarted at any time, like ``Heroku``.
 
 Disclaimer
 ----------
@@ -22,20 +22,22 @@ Your can install `redis-tasks` using pip like this::
 
 .. note:: ``redis-tasks`` only runs on python versions 3.6 and above.
 
-You have to either set the :envvar:`RT_SETTINGS_MODULE` or manually
-call `settings.configure()` passing in a python settings module
-before you can use redis-tasks in your code.
-
+| You have to set the :envvar:`RT_SETTINGS_MODULE` environent variable 
+  before you can use redis-tasks in your code.
+|
+| Alternativaly you can call :py:meth:`redis_tasks.conf.settings.configure`
+  passing in a python settings module or call
+  :py:meth:`redis_tasks.conf.settings.configure_from_dict` passing in a dict
+  of settings.
+| See :py:class:`redis_tasks.conf.Settings` for more details.
 
 Quickstart Guide
 ================
 
-Prerequisite: You have successfully installed redis-tasks and have a redis insteance ready.
-In this Quickstart Guide we'll use "redis://localhost:6379" as our REDIS_URL
+Prerequisite: You have successfully installed ``redis-tasks`` and have a ``redis`` insteance ready.
+In this Quickstart Guide we'll use ``"redis://localhost:6379"`` as our :any:`REDIS_URL`
 
-Very basic example
-------------------
-1. Create a tasks module `tasks.py` and write a function that you want to execute in a worker using redis-tasks
+1. Create a `tasks.py` module and write a function that you want to execute in a worker using ``redis-tasks``
 
 .. code:: python
 
@@ -47,8 +49,8 @@ Very basic example
         with urllib.request.urlopen(url) as f:
             print(len(f.read()))
 
-2. Write an rt_settings module to supply your custom config to redis-tasks
-   In this example we just pass the REDIS_URL from the enviroment
+2. Write a ``settings.py`` module to supply your custom config to ``redis-tasks``
+   In this example we just pass the :any:`REDIS_URL` from the enviroment
 
 .. code:: python
 
@@ -58,8 +60,8 @@ Very basic example
 3. In a separate terminal/shell start a worker::
 
    $ export REDIS_URL='redis://127.0.0.1:6379'
-   $ export RT_SETTINGS_MODULE=rt_settings 
-   $ python -m redis_tasks.cli worker
+   $ export RT_SETTINGS_MODULE=settings 
+   $ redis_tasks worker
 
 You should see a message that the worker started successfully::
 
@@ -73,21 +75,21 @@ You should see a message that the worker started successfully::
 .. code:: python
 
     from redis_tasks import Queue
-    default_queue = Queue()
     from tasks import print_len_of_url_content
-    default_queue.enqueue_call(print_len_of_url_content,
-                               kwargs={'url': 'https://www.readthedocs.org/'})
+    Queue().enqueue_call(
+        print_len_of_url_content,
+        kwargs={'url': 'https://www.readthedocs.org/'})
 
 In the worker logs you should see the task being started and finished::
 
-    16:15:53 INFO      redis_tasks.task: Task tasks.print_len_of_url_content(url='https://www.google.com/') [095c3eb9-7073-4ad6-a7cc-16885ee962a4] started
+    16:15:53 INFO      redis_tasks.task: Task tasks.print_len_of_url_content(url='https://www.readthedocs.org/') [095c3eb9-7073-4ad6-a7cc-16885ee962a4] started
     12862
-    16:15:53 INFO      redis_tasks.task: Task tasks.print_len_of_url_content(url='https://www.google.com/') [095c3eb9-7073-4ad6-a7cc-16885ee962a4] finished
+    16:15:53 INFO      redis_tasks.task: Task tasks.print_len_of_url_content(url='https://www.readthedocs.org/') [095c3eb9-7073-4ad6-a7cc-16885ee962a4] finished
 
-Basic example (including scheduler)
------------------------------------
+Adding Scheduled Tasks
+----------------------
 
-5. To add regularly executed tasks we extend the rt_settings module to this:
+5. To add regularly executed tasks we extend the ``settings.py`` module to this:
 
 .. code:: python
 
@@ -98,8 +100,8 @@ Basic example (including scheduler)
 
     TIMEZONE = "UTC"  # timezone to be used by scheduler
     SCHEDULE = {
-        'print_len_of_readthedocs_org': {  # the task entry identifier
-            'task': 'tasks.print_len_of_url_content',  # dotted module path to function to be executed
+        'print_len_of_readthedocs_org': {
+            'task': 'tasks.print_len_of_url_content',
             'schedule': run_every(minutes=20),
             #'schedule': once_per_day('06:00'),  # Alternative 1
             #"schedule": crontab("0 0 * * 1")},  # Alternative 2
@@ -108,12 +110,14 @@ Basic example (including scheduler)
         },
     }
 
+For more details on SCHEDULE configuration see :doc:`scheduler`
+
 
 6. In a separate shell/terminal Start a scheduler process::
 
    $ export REDIS_URL='redis://127.0.0.1:6379'
    $ export RT_SETTINGS_MODULE=rt_settings
-   $ python -m redis_tasks.cli scheduler
+   $ redis_tasks scheduler
 
 Verify that you see a successful startup message like::
 
@@ -134,7 +138,7 @@ And the worker will log the following messages when it starts/finishes the task 
    :maxdepth: 2
    :caption: Usage:
 
-   redis_tasks.cli
+   Command Line Interface <cli>
    settings
    scheduler
    middleware
@@ -145,7 +149,7 @@ And the worker will log the following messages when it starts/finishes the task 
    :maxdepth: 2
    :caption: API Docs:
 
-   modules
+   redis_tasks
 
 Indices and tables
 ==================
