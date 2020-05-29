@@ -30,6 +30,7 @@ author = 'Christian Fersch'
 # ones.
 extensions = [
     'sphinx.ext.autodoc',
+    'sphinx.ext.viewcode',
     'sphinx_click.ext',
 ]
 
