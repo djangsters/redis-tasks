@@ -14,7 +14,7 @@ that workers can be restarted at any time, like Heroku.
 
 Disclaimer
 ----------
-`redis-tasks` does not store any kind of task results.
+``redis-tasks`` does not store any kind of task results.
 It's your tasks' code responsibility to store task results
 using a persistence layer of your choice if needed.
 
