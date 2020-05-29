@@ -14,5 +14,6 @@ user-friendly interface makes periodic task management easy and scalable.
 For more information and usage instructions, see our [documentation](
 https://redis-tasks.readthedocs.io/en/latest/).
 
+## Monitoring
 Want to monitor `redis-tasks` tasks, queues and workers? Check out [rt-dashboard](
 https://github.com/djangsters/rt-dashboard) - a monitoring tool for `redis-tasks`.
