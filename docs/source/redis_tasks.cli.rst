@@ -1,3 +1,3 @@
 .. click:: redis_tasks.cli:main
-   :prog: python -m redis_tasks.cli
+   :prog: redis_tasks
    :show-nested:
