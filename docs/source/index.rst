@@ -130,8 +130,9 @@ And the worker will log the following messages when it starts/finishes the task 
 
 .. toctree::
    :maxdepth: 2
-   :caption: Contents:
+   :caption: Usage:
 
+   redis_tasks.cli
    settings
    scheduler
    middleware
@@ -143,7 +144,6 @@ And the worker will log the following messages when it starts/finishes the task 
    :caption: API Docs:
 
    modules
-   redis_tasks.cli
 
 Indices and tables
 ==================
