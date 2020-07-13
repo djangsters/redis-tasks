@@ -13,7 +13,7 @@ click==7.1.2              # via -r requirements.in, pip-tools
 coverage==5.0.4           # via pytest-cov
 croniter==0.3.32          # via -r requirements.in
 docutils==0.16            # via sphinx
-flake8-isort==3.0.0       # via -r requirements.in
+flake8-isort==3.0.1       # via -r requirements.in
 flake8==3.8.3             # via -r requirements.in, flake8-isort
 idna==2.9                 # via requests
 imagesize==1.2.0          # via sphinx
