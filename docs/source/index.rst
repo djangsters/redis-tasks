@@ -111,7 +111,7 @@ So far the configuration allowed you to run the tasks almost immediately. What i
 For more details on SCHEDULE configuration see :doc:`scheduler`
 
 
-6. In a separate shell/terminal Start a scheduler process::
+6. In a separate shell/terminal start a scheduler process::
 
    $ export REDIS_URL='redis://127.0.0.1:6379'
    $ export RT_SETTINGS_MODULE=rt_settings
