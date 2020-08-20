@@ -1,6 +1,8 @@
 Ordering the tasks
 ==================
 
+.. note:: Needs graph middleware, which is available as a contrib module
+
 Occasionally you will find yourself in a situation where you want a particular
 task to get started when other finish. For instance, you have serious data processing
 and you want to send a report once all is finished. It is highly unlikely your
