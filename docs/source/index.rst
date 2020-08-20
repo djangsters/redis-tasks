@@ -1,11 +1,9 @@
 Welcome to redis-tasks' documentation!
 =======================================
 
-``redis tasks`` is a framework for background tasks execution.
-It uses redis for its shared resources like queues.
-It's able to provide reliable tasks execution for long
-running tasks even in environments, where it's expected
-that workers can be restarted at any time, like ``Heroku``.
+``redis tasks`` is a framework for reliable background tasks execution,
+specifically for environments where workers are expected to restart frequently,
+like Heroku. The task queueing is handled by Redis.
 
 Disclaimer
 ----------
