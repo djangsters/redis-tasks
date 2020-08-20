@@ -66,7 +66,7 @@ You should see a message that the worker started successfully::
 
     16:15:39 INFO    redis_tasks.worker: Worker iw-T460p.14152 [0e015d7a-79c7-42be-8b02-add7161c5951] started
 
-4. Using an ipython shell or whereever needed in your code, you can
+4. In a separate terminal/shell you can
    now enqueue this tasks to be executed by the worker at any time like this:
 
 .. note:: Make sure that the python process is also started with the same ENV VARS as the worker process, see export calls in step 3.
