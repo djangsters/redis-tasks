@@ -7,7 +7,7 @@ exception. Just before the actual running, the framework passes the task as firs
 class function to the middleware. That means the worker had processed the
 information from the ``Queue`` already, gotten the task and its arguments and created a 
 middleware instance. Then it calls a method of this instance with appropriate 
-information. You are left on your own when and how to run the task.
+information. You are free to decide if, when and how to run the actual task.
 
 In the following example we've created a middleware for delaying the task 
 execution:
@@ -21,14 +21,9 @@ execution:
          time.sleep(1)
          run(*args, *kwargs)
 
-You need to declare it as a plain python ``class`` and it must have method called 
-``run_task``. The most important parameter here is ``run``. As we mentioned above the 
-framework leaves the calling in your hands. You don't need to return anything since
-the returned result of the ``run_task`` is completely ignored. 
+The middleware definition is a simple Python class, which must have a method called run_task. The function takes two obligatory parameters - task and run which define respectively the name of the task and the reference to the function which should be executed. As can be seen, the code before the execution of the run call is what is of our interest.
 
-If you want to use your custom middleware you need to include it into your 
-``rt_settings``. Let's assume that your code lies in a file named `middleware.py`
-in the root directory of your project. You have to declare it like this:
+In order to use the previously defined Middleware additional entries to the `settings.py` file are necessary. It is a good practice to put the middleware definitions in a separate directory, e.g. middleware, Then the definition would be:
 
 .. code:: python
 
@@ -39,6 +34,8 @@ in the root directory of your project. You have to declare it like this:
 But wait, what if you want to do stuff right after the task is done? You use the
 same approach as above but instead of declaring ``run_task`` method you name it 
 ``process_outcome``. In the example below we are sending a report via an email:
+``process_outcome`` is always called, regardless of the outcome (also if some task raised exceptions for example)
+The ``task`` that produced the outcome is passed in as the first argument to the method.
 
 .. code:: python
 
