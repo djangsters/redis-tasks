@@ -41,3 +41,17 @@ following keys:
 
         "schedule": redis_tasks.once_per_day("12:00")
 
+Here is an example from step 5. of our Quickstart Guide
+
+.. code:: python
+
+    SCHEDULE = {
+        'print_len_of_readthedocs_org': {  # the task entry identifier
+            'task': 'tasks.print_len_of_url_content',
+            'schedule': run_every(minutes=20),
+            # 'schedule': once_per_day('06:00'),
+            # 'schedule': crontab('0 0 * * 1'),
+            'args': [],
+            'kwargs': {'url': 'https://readthedocs.org/'},
+        }
+    }
