@@ -87,13 +87,14 @@ In the worker logs you should see the task being started and finished::
 
 Adding Scheduled Tasks
 ----------------------
+So far the configuration allowed you to run the tasks almost immediately. What if you want to specify the exact time?
 
-5. To add regularly executed tasks we extend the ``settings.py`` module to this:
+5. To add regularly executed tasks we extend the `settings.py` module to this:
 
 .. code:: python
 
     import os
-    from redis_tasks import crontab, once_per_day, run_every
+    from redis_tasks import run_every
 
     REDIS_URL = os.environ['REDIS_URL']
 
@@ -102,8 +103,6 @@ Adding Scheduled Tasks
         'print_len_of_readthedocs_org': {
             'task': 'tasks.print_len_of_url_content',
             'schedule': run_every(minutes=20),
-            #'schedule': once_per_day('06:00'),  # Alternative 1
-            #"schedule": crontab("0 0 * * 1")},  # Alternative 2
             'args': [],
             'kwargs': {'url': 'https://readthedocs.org/'},
         },
