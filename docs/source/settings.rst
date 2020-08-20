@@ -11,13 +11,13 @@ Available Settings
 
     :default: "redis://127.0.0.1:6379"
 
-    A URL of the redis instance to be used by ``redis-tasks``.
+    The URL of the redis instance to be used by ``redis-tasks``.
 
 .. attribute:: REDIS_PREFIX
 
     :default: "redis_tasks"
 
-    A redis key prefix, that will be used as a namespace for all redis keys used by ``redis-tasks``.
+    The redis key prefix, that will be used as a namespace for all redis keys used by ``redis-tasks``.
 
 .. attribute:: TIMEZONE
 
