@@ -3,7 +3,7 @@ Welcome to redis-tasks' documentation!
 
 ``redis tasks`` is a framework for reliable background tasks execution,
 specifically for environments where workers are expected to restart frequently,
-like Heroku. The task queueing is handled by Redis.
+like Heroku. The task queueing is handled by ``redis``.
 
 Disclaimer
 ----------
@@ -33,6 +33,7 @@ Quickstart Guide
 ================
 
 Prerequisite: You have successfully installed ``redis-tasks`` and have a ``redis`` insteance ready.
+Prerequisite: You have successfully installed ``redis-tasks`` and have a running ``redis`` instance.
 In this Quickstart Guide we'll use ``"redis://localhost:6379"`` as our :any:`REDIS_URL`
 
 1. Create a `tasks.py` module and write a function that you want to execute in a worker using ``redis-tasks``
