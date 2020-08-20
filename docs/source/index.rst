@@ -14,7 +14,7 @@ a persistence layer of your choice in your task code.
 Installation
 ============
 
-Your can install `redis-tasks` using pip like this::
+Your can install ``redis-tasks`` using pip like this::
 
     $ pip install redis-tasks
 
