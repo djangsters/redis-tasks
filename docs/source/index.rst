@@ -48,7 +48,7 @@ In this Quickstart Guide we'll use ``"redis://localhost:6379"`` as our :any:`RED
         with urllib.request.urlopen(url) as f:
             print(len(f.read()))
 
-2. Write a ``settings.py`` module to supply your custom config to ``redis-tasks``
+2. Create a `settings.py` module to supply your custom config to ``redis-tasks``
    In this example we just pass the :any:`REDIS_URL` from the enviroment
 
 .. code:: python
