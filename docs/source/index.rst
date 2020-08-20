@@ -8,8 +8,8 @@ like Heroku. The task queueing is handled by Redis.
 Disclaimer
 ----------
 ``redis-tasks`` does not store any kind of task results.
-It's your tasks' code responsibility to store task results
-using a persistence layer of your choice if needed.
+If you need to store task results, you have to use
+a persistence layer of your choice in your task code.
 
 Installation
 ============
