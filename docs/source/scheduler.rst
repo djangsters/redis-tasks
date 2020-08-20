@@ -1,7 +1,7 @@
 Scheduler
 =========
 
-``redis-tasks`` provides developers with an built-in task scheduler.
+``redis-tasks`` provides developers with a built-in task scheduler.
 A schedule is defined as a setting ``RT_SCHEDULE``, which is a dict of the
 structure ``id`` -> ``entry``. An ``entry`` itself is a dict with the
 following keys:
