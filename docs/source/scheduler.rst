@@ -17,11 +17,11 @@ following keys:
 
 ``schedule`` for a task can be represented in multiple ways:
 
-1. as a crontab, for example to run a task every Monday you would set::
+* as a crontab, for example to run a task every Monday you would set::
 
     "schedule": redis_tasks.crontab("0 0 * * 1")
 
-2. as a periodic schedule defined with ``redis_tasks.run_every()``, which
+* as a periodic schedule defined with ``redis_tasks.run_every()``, which
     accepts the following keyword-only arguments:
 
     - ``hours``
@@ -35,7 +35,7 @@ following keys:
         "schedule": redis_tasks.run_every(hours=6, start_at="05:00")
 
     This would run a task at 5:00, 11:00 , 17:00, 23:00.
-3. as a daily task defined with ``redis_tasks.once_per_day()``, which accepts a
+* as a daily task defined with ``redis_tasks.once_per_day()``, which accepts a
     single string argument in the format <hours>:<minutes>.
     For example to run a task every day at 12:00, you would set::
 
