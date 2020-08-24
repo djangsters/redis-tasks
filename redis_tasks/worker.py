@@ -94,7 +94,7 @@ class Worker:
         if deletes:
             pipeline.hdel(self.key, *deletes)
         if store:
-            pipeline.hmset(self.key, store)
+            pipeline.hset(self.key, mapping=store)
 
     def heartbeat(self):
         """Send a heartbeat.
