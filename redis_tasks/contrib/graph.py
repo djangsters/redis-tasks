@@ -19,7 +19,7 @@ def chain(members):
 class TaskGraph:
     def __init__(self, id=None):
         self.id = id or str(uuid.uuid4())
-        self.key = construct_redis_key(f"ston.graph:{self.id}")
+        self.key = construct_redis_key(f"graph:{self.id}")
         self.nodes = []
         self.edges = set()
 
@@ -66,7 +66,7 @@ class TaskGraph:
             queue = Queue(node.task.pop('queue', "default"))
             task = queue.enqueue_call(**node.task, pipeline=pipeline)
             node.task = None
-            task.meta["ston.graph"] = self.id
+            task.meta["graph"] = self.id
             task.save_meta(pipeline=pipeline)
             node.task_id = task.id
 
@@ -88,7 +88,7 @@ class GraphNode:
 
 class GraphMiddleware:
     def process_outcome(self, task, *exc_info):
-        graph_id = task.meta.get("ston.graph")
+        graph_id = task.meta.get("graph")
         if not graph_id:
             return
         graph = TaskGraph(graph_id)
