@@ -8,7 +8,6 @@ update_configs:
     default_reviewers:
       - "i-trofimtschuk"
       - "vasilty"
-      - "kaloyanm"
       - "djangsters/backend"
     update_schedule: "weekly"
     allowed_updates:
