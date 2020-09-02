@@ -52,6 +52,7 @@ class Settings:
         self.configure(SimpleNamespace(**dct))
 
 
+#: default :py:class:`redis_tasks.conf.Settings` instance
 settings = Settings()
 
 

@@ -312,7 +312,7 @@ class Task:
         if deletes:
             pipeline.hdel(self.key, *deletes)
         if store:
-            pipeline.hmset(self.key, store)
+            pipeline.hset(self.key, mapping=store)
 
     @atomic_pipeline
     def save_meta(self, *, pipeline=None):
