@@ -12,6 +12,13 @@ def get_version():
     raise RuntimeError('No version info found.')
 
 
+def get_long_description():
+    this_directory = os.path.abspath(os.path.dirname(__file__))
+    with open(os.path.join(this_directory, 'README.md'), encoding='utf-8') as f:
+        long_description = f.read()
+    return long_description
+
+
 setup(
     name='redis-tasks',
     version=get_version(),
@@ -19,6 +26,8 @@ setup(
     author='Christian Fersch',
     author_email='christian@djangsters.de',
     description='redis-tasks is a lightweight library for processing background tasks',
+    long_description=get_long_description(),
+    long_description_content_type='text/markdown',
     packages=find_packages(),
     include_package_data=True,
     zip_safe=False,
