@@ -7,7 +7,7 @@
 attrs==18.1.0             # via pytest
 click==7.1.2              # via -r requirements.in, pip-tools
 coverage==5.0.4           # via pytest-cov
-croniter==0.3.31          # via -r requirements.in
+croniter==0.3.34          # via -r requirements.in
 entrypoints==0.3          # via flake8
 flake8-isort==3.0.0       # via -r requirements.in
 flake8==3.7.9             # via -r requirements.in, flake8-isort
@@ -15,6 +15,7 @@ importlib-metadata==1.5.0  # via pluggy, pytest
 isort[pyproject]==4.3.21  # via flake8-isort
 mccabe==0.6.1             # via flake8
 more-itertools==4.1.0     # via pytest
+natsort==7.0.1            # via croniter
 packaging==20.3           # via pytest
 pip-tools==5.1.2          # via -r requirements.in
 pluggy==0.13.1            # via pytest
