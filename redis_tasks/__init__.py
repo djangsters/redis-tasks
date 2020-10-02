@@ -5,4 +5,4 @@ from .task import redis_task, get_current_task, Task
 from .exceptions import *
 from .scheduler import crontab, scheduler_main, once_per_day, run_every
 
-__version__ = '0.0.10'
+__version__ = '0.0.11.dev0'
