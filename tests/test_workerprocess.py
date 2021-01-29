@@ -315,6 +315,7 @@ def test_signal_shutdown_in_task(suprocess_socket):
     with suprocess_socket.accept() as taskconn:
         assert taskconn.poll(1)
         assert taskconn.recv() == "A"
+        time.sleep(1)
         os.kill(process.pid, signal.SIGTERM)
         assert taskconn.poll(1)
         print('after listener polls')
