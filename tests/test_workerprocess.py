@@ -283,12 +283,17 @@ def taskwait():
             time.sleep(10)
             conn.send("C")
         except WorkerShutdown:
+            print('before client send B')
             conn.send("B")
             print('after client send B')
             conn.poll(1)
             print('after poll in client')
             assert conn.recv() == 'X'
             print('after client receives X')
+            raise
+        except Exception as e:
+            print('Exception')
+            print(e)
             raise
 
 
