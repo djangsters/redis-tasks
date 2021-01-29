@@ -278,8 +278,8 @@ def test_execute_task(mocker, settings, time_mocker):
 
 def taskwait():
     with multiprocessing.connection.Client(os.environ['RT_TEST_SOCKET']) as conn:
-        conn.send("A")
         try:
+            conn.send("A")
             time.sleep(10)
             conn.send("C")
         except WorkerShutdown:
@@ -315,7 +315,6 @@ def test_signal_shutdown_in_task(suprocess_socket):
     with suprocess_socket.accept() as taskconn:
         assert taskconn.poll(1)
         assert taskconn.recv() == "A"
-        time.sleep(1)
         os.kill(process.pid, signal.SIGTERM)
         assert taskconn.poll(1)
         print('after listener polls')
