@@ -56,6 +56,7 @@ class PostponeShutdown:
             cls._shutdown_delayed = True
         else:
             logger.warning('Raising WorkerShutdown to cancel task')
+            traceback.print_stack()
             raise WorkerShutdown()
 
 
