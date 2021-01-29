@@ -1,4 +1,5 @@
 import multiprocessing
+import multiprocessing.connection
 import os
 import signal
 import time
@@ -283,6 +284,7 @@ def taskwait():
             conn.send("C")
         except WorkerShutdown:
             conn.send("B")
+            time.sleep(0.5)
             raise
 
 
@@ -307,7 +309,7 @@ def test_signal_shutdown_in_task(suprocess_socket):
         os.kill(process.pid, signal.SIGTERM)
         assert taskconn.poll(1)
         assert taskconn.recv() == "B"
-        process.join(1)
+        process.join(2)
         assert not process.is_alive()
     task.refresh()
     assert task.status == TaskStatus.FAILED
