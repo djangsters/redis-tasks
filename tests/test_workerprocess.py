@@ -283,17 +283,7 @@ def taskwait():
             time.sleep(10)
             conn.send("C")
         except WorkerShutdown:
-            print('before client send B')
             conn.send("B")
-            print('after client send B')
-            conn.poll(1)
-            print('after poll in client')
-            assert conn.recv() == 'X'
-            print('after client receives X')
-            raise
-        except Exception as e:
-            print('Exception')
-            print(e)
             raise
 
 
@@ -317,11 +307,8 @@ def test_signal_shutdown_in_task(suprocess_socket):
         assert taskconn.recv() == "A"
         os.kill(process.pid, signal.SIGTERM)
         assert taskconn.poll(1)
-        print('after listener polls')
         assert taskconn.recv() == "B"
-        print('after listener receives B')
-        taskconn.send("X")
-        process.join(2)
+        process.join(1)
         assert not process.is_alive()
     task.refresh()
     assert task.status == TaskStatus.FAILED
