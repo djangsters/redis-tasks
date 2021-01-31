@@ -4,34 +4,75 @@
 #
 #    pip-compile --output-file requirements.txt requirements.in
 #
-attrs==20.3.0             # via pytest
-click==7.1.2              # via -r requirements.in, pip-tools
-coverage==5.0.4           # via pytest-cov
-croniter==0.3.34          # via -r requirements.in
-flake8-isort==4.0.0       # via -r requirements.in
-flake8==3.8.4             # via -r requirements.in, flake8-isort
-importlib-metadata==1.5.0  # via flake8, pluggy, pytest
-iniconfig==1.1.1          # via pytest
-isort==4.3.21             # via flake8-isort
-mccabe==0.6.1             # via flake8
-natsort==7.0.1            # via croniter
-packaging==20.3           # via pytest
-pip-tools==5.3.1          # via -r requirements.in
-pluggy==0.13.1            # via pytest
-py==1.10.0                # via pytest
-pycodestyle==2.6.0        # via flake8
-pyflakes==2.2.0           # via flake8
-pyparsing==2.4.6          # via packaging
-pytest-cov==2.9.0         # via -r requirements.in
-pytest-mock==3.3.1        # via -r requirements.in
-pytest==6.2.1             # via -r requirements.in, pytest-cov, pytest-mock
-python-dateutil==2.7.3    # via croniter
-pytz==2020.1              # via -r requirements.in
-redis==3.5.3              # via -r requirements.in
-six==1.11.0               # via packaging, pip-tools, python-dateutil
-testfixtures==6.14.0      # via flake8-isort
-toml==0.10.2              # via pytest
-zipp==3.1.0               # via importlib-metadata
+attrs==20.3.0
+    # via pytest
+click==7.1.2
+    # via
+    #   -r requirements.in
+    #   pip-tools
+coverage==5.0.4
+    # via pytest-cov
+croniter==0.3.34
+    # via -r requirements.in
+flake8-isort==4.0.0
+    # via -r requirements.in
+flake8==3.8.4
+    # via
+    #   -r requirements.in
+    #   flake8-isort
+importlib-metadata==1.5.0
+    # via
+    #   flake8
+    #   pluggy
+    #   pytest
+iniconfig==1.1.1
+    # via pytest
+isort==4.3.21
+    # via flake8-isort
+mccabe==0.6.1
+    # via flake8
+natsort==7.0.1
+    # via croniter
+packaging==20.3
+    # via pytest
+pip-tools==5.3.1
+    # via -r requirements.in
+pluggy==0.13.1
+    # via pytest
+py==1.10.0
+    # via pytest
+pycodestyle==2.6.0
+    # via flake8
+pyflakes==2.2.0
+    # via flake8
+pyparsing==2.4.6
+    # via packaging
+pytest-cov==2.9.0
+    # via -r requirements.in
+pytest-mock==3.3.1
+    # via -r requirements.in
+pytest==6.2.1
+    # via
+    #   -r requirements.in
+    #   pytest-cov
+    #   pytest-mock
+python-dateutil==2.7.3
+    # via croniter
+pytz==2020.1
+    # via -r requirements.in
+redis==3.5.3
+    # via -r requirements.in
+six==1.11.0
+    # via
+    #   packaging
+    #   pip-tools
+    #   python-dateutil
+testfixtures==6.14.0
+    # via flake8-isort
+toml==0.10.2
+    # via pytest
+zipp==3.4.0
+    # via importlib-metadata
 
 # The following packages are considered to be unsafe in a requirements file:
 # pip
