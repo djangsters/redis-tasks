@@ -1,0 +1,18 @@
+# Please see the documentation for all configuration options:
+# https://help.github.com/github/administering-a-repository/configuration-options-for-dependency-updates
+
+version: 2
+
+updates:
+  # python updates
+  - package-ecosystem: "pip"
+    directory: "/"
+    reviewers:
+      - "djangsters/backend"
+    schedule:
+      interval: "weekly"
+      day: "sunday"
+      time: "10:00"
+      timezone: "Europe/Berlin"
+    allow:
+      - dependency-type: "all"
