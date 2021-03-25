@@ -1,4 +1,5 @@
 import multiprocessing
+import multiprocessing.connection
 import os
 import signal
 import time
@@ -277,8 +278,8 @@ def test_execute_task(mocker, settings, time_mocker):
 
 def taskwait():
     with multiprocessing.connection.Client(os.environ['RT_TEST_SOCKET']) as conn:
-        conn.send("A")
         try:
+            conn.send("A")
             time.sleep(10)
             conn.send("C")
         except WorkerShutdown:
