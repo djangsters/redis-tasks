@@ -16,10 +16,15 @@ croniter==0.3.34
     # via -r requirements.in
 flake8-isort==4.0.0
     # via -r requirements.in
-flake8==3.8.4
+flake8==3.9.0
     # via
     #   -r requirements.in
     #   flake8-isort
+importlib-metadata==3.7.3
+    # via
+    #   flake8
+    #   pluggy
+    #   pytest
 iniconfig==1.1.1
     # via pytest
 isort==4.3.21
@@ -36,9 +41,9 @@ pluggy==0.13.1
     # via pytest
 py==1.10.0
     # via pytest
-pycodestyle==2.6.0
+pycodestyle==2.7.0
     # via flake8
-pyflakes==2.2.0
+pyflakes==2.3.1
     # via flake8
 pyparsing==2.4.6
     # via packaging
@@ -66,6 +71,10 @@ testfixtures==6.14.0
     # via flake8-isort
 toml==0.10.2
     # via pytest
+typing-extensions==3.7.4.3
+    # via importlib-metadata
+zipp==3.4.1
+    # via importlib-metadata
 
 # The following packages are considered to be unsafe in a requirements file:
 # pip
