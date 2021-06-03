@@ -24,7 +24,6 @@ yellow = partial(click.style, fg='yellow')
 def main():
     """redis_tasks command line tool"""
     sys.path.insert(0, os.getcwd())
-    pass
 
 
 @main.command()
