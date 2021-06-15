@@ -32,7 +32,6 @@ Your can install ``redis-tasks`` using pip like this::
 Quickstart Guide
 ================
 
-Prerequisite: You have successfully installed ``redis-tasks`` and have a ``redis`` insteance ready.
 Prerequisite: You have successfully installed ``redis-tasks`` and have a running ``redis`` instance.
 In this Quickstart Guide we'll use ``"redis://localhost:6379"`` as our :any:`REDIS_URL`
 
@@ -58,9 +57,7 @@ In this Quickstart Guide we'll use ``"redis://localhost:6379"`` as our :any:`RED
 
 3. In a separate terminal/shell start a worker::
 
-   $ export REDIS_URL='redis://127.0.0.1:6379'
-   $ export RT_SETTINGS_MODULE=settings 
-   $ redis_tasks worker
+   $ REDIS_URL=redis://127.0.0.1:6379 RT_SETTINGS_MODULE=settings redis_tasks worker
 
 You should see a message that the worker started successfully::
 
