@@ -1,4 +1,5 @@
 import multiprocessing
+import multiporcessing.connection
 import os
 import signal
 
