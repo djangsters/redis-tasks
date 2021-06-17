@@ -1,7 +1,6 @@
 import datetime
 import logging
 import math
-import os
 import sys
 import time
 from functools import partial
@@ -23,7 +22,7 @@ yellow = partial(click.style, fg='yellow')
 @click.version_option(__version__)
 def main():
     """redis_tasks command line tool"""
-    sys.path.insert(0, os.getcwd())
+    sys.path.insert(0, '')
 
 
 @main.command()
