@@ -20,7 +20,8 @@ yellow = partial(click.style, fg='yellow')
 
 @click.group()
 @click.version_option(__version__)
-@click.option('--pythonpath', default='',
+@click.option(
+    '--pythonpath', default='',
     help='A directory to add to the Python path, defaults to the work directory')
 def main(pythonpath):
     """redis_tasks command line tool"""
