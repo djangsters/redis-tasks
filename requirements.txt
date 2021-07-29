@@ -14,12 +14,12 @@ coverage==5.5
     # via pytest-cov
 croniter==0.3.34
     # via -r requirements.in
-flake8-isort==4.0.0
-    # via -r requirements.in
 flake8==3.8.4
     # via
     #   -r requirements.in
     #   flake8-isort
+flake8-isort==4.0.0
+    # via -r requirements.in
 importlib-metadata==4.5.0
     # via
     #   flake8
@@ -31,7 +31,7 @@ isort==4.3.21
     # via flake8-isort
 mccabe==0.6.1
     # via flake8
-natsort==7.0.1
+natsort==7.1.1
     # via croniter
 packaging==20.3
     # via pytest
@@ -47,15 +47,15 @@ pyflakes==2.2.0
     # via flake8
 pyparsing==2.4.6
     # via packaging
-pytest-cov==2.12.1
-    # via -r requirements.in
-pytest-mock==3.3.1
-    # via -r requirements.in
 pytest==6.2.1
     # via
     #   -r requirements.in
     #   pytest-cov
     #   pytest-mock
+pytest-cov==2.12.1
+    # via -r requirements.in
+pytest-mock==3.3.1
+    # via -r requirements.in
 python-dateutil==2.7.3
     # via croniter
 pytz==2020.1
