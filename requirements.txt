@@ -33,7 +33,7 @@ mccabe==0.6.1
     # via flake8
 natsort==7.1.1
     # via croniter
-packaging==20.3
+packaging==21.0
     # via pytest
 pip-tools==5.3.1
     # via -r requirements.in
@@ -56,7 +56,7 @@ pytest-cov==2.12.1
     # via -r requirements.in
 pytest-mock==3.3.1
     # via -r requirements.in
-python-dateutil==2.7.3
+python-dateutil==2.8.2
     # via croniter
 pytz==2020.1
     # via -r requirements.in
@@ -64,7 +64,6 @@ redis==3.5.3
     # via -r requirements.in
 six==1.11.0
     # via
-    #   packaging
     #   pip-tools
     #   python-dateutil
 testfixtures==6.14.0
