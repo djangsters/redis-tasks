@@ -14,7 +14,7 @@ coverage==5.5
     # via pytest-cov
 croniter==0.3.34
     # via -r requirements.in
-flake8==3.8.4
+flake8==3.9.2
     # via
     #   -r requirements.in
     #   flake8-isort
@@ -41,11 +41,11 @@ pluggy==0.13.1
     # via pytest
 py==1.10.0
     # via pytest
-pycodestyle==2.6.0
+pycodestyle==2.7.0
     # via flake8
-pyflakes==2.2.0
+pyflakes==2.3.1
     # via flake8
-pyparsing==2.4.6
+pyparsing==2.4.7
     # via packaging
 pytest==6.2.1
     # via
@@ -56,7 +56,7 @@ pytest-cov==2.12.1
     # via -r requirements.in
 pytest-mock==3.3.1
     # via -r requirements.in
-python-dateutil==2.7.3
+python-dateutil==2.8.2
     # via croniter
 pytz==2020.1
     # via -r requirements.in
