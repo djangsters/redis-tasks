@@ -7,8 +7,9 @@ from tests.utils import QueueFactory, WorkerFactory
 
 @pytest.fixture
 def cli_run():
-    from redis_tasks.cli import main as cli_main
     from click.testing import CliRunner
+
+    from redis_tasks.cli import main as cli_main
     runner = CliRunner()
 
     def run(*args):
