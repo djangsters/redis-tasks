@@ -35,6 +35,7 @@ class ModifiableSettings:
 @pytest.fixture()
 def settings():
     from redis_tasks import conf
+
     # ensure the settings are initialized
     conf.settings.DEFAULT_TASK_TIMEOUT
     original_dict = conf.settings.__dict__
