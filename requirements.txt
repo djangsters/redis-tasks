@@ -27,7 +27,7 @@ importlib-metadata==4.6.1
     #   pytest
 iniconfig==1.1.1
     # via pytest
-isort==4.3.21
+isort==5.9.3
     # via flake8-isort
 mccabe==0.6.1
     # via flake8
