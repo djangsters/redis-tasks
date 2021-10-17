@@ -6,7 +6,7 @@
 #
 attrs==20.3.0
     # via pytest
-click==7.1.2
+click==8.0.3
     # via
     #   -r requirements.in
     #   pip-tools
@@ -22,6 +22,7 @@ flake8-isort==4.0.0
     # via -r requirements.in
 importlib-metadata==4.6.1
     # via
+    #   click
     #   flake8
     #   pluggy
     #   pytest
