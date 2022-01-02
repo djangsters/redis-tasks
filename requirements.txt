@@ -4,7 +4,7 @@
 #
 #    pip-compile --output-file=requirements.txt requirements.in
 #
-attrs==20.3.0
+attrs==21.4.0
     # via pytest
 click==7.1.2
     # via
