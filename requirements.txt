@@ -62,7 +62,7 @@ pytz==2020.1
     # via -r requirements.in
 redis==3.5.3
     # via -r requirements.in
-six==1.11.0
+six==1.16.0
     # via
     #   pip-tools
     #   python-dateutil
