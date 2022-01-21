@@ -12,7 +12,7 @@ click==7.1.2
     #   pip-tools
 coverage==5.5
     # via pytest-cov
-croniter==0.3.34
+croniter==1.2.0
     # via -r requirements.in
 flake8==3.9.2
     # via
@@ -31,8 +31,6 @@ isort==5.9.3
     # via flake8-isort
 mccabe==0.6.1
     # via flake8
-natsort==7.1.1
-    # via croniter
 packaging==21.0
     # via pytest
 pip-tools==5.3.1
