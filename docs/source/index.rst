@@ -18,7 +18,7 @@ Your can install ``redis-tasks`` using pip like this::
 
     $ pip install redis-tasks
 
-.. note:: ``redis-tasks`` only runs on python versions 3.6 and above.
+.. note:: ``redis-tasks`` only runs on python versions 3.7 and above.
 
 | You have to set the :envvar:`RT_SETTINGS_MODULE` environent variable 
   before you can use redis-tasks in your code.
