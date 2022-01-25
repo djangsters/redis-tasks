@@ -10,7 +10,7 @@ click==8.0.3
     # via
     #   -r requirements.in
     #   pip-tools
-coverage==5.5
+coverage[toml]==5.5
     # via pytest-cov
 croniter==1.2.0
     # via -r requirements.in
@@ -49,7 +49,7 @@ pytest==6.2.5
     #   -r requirements.in
     #   pytest-cov
     #   pytest-mock
-pytest-cov==2.12.1
+pytest-cov==3.0.0
     # via -r requirements.in
 pytest-mock==3.6.1
     # via -r requirements.in
@@ -67,8 +67,8 @@ testfixtures==6.18.3
     # via flake8-isort
 toml==0.10.2
     # via
+    #   coverage
     #   pytest
-    #   pytest-cov
 wrapt==1.13.3
     # via deprecated
 
