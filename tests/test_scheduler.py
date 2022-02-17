@@ -346,20 +346,20 @@ class TestScheduler:
             'a': {'task': stub.path,
                   'args': ["a"],
                   'singleton': False,
-                  'schedule': FixedSchedule([in_ms(10), in_ms(30), in_ms(1000)])},
+                  'schedule': FixedSchedule([in_ms(10), in_ms(11), in_ms(80), in_ms(1000)])},
             'b': {'task': stub.path,
                   'args': ["b"],
                   'singleton': False,
-                  'schedule': FixedSchedule([in_ms(20), in_ms(1000)])},
+                  'schedule': FixedSchedule([in_ms(40), in_ms(1000)])},
         }
         queue = Queue()
 
         def stop_scheduler():
-            time.sleep(0.04)
+            time.sleep(0.1)
             scheduler.shutdown_requested.set()
 
         scheduler = Scheduler()
         with futures.ThreadPoolExecutor(max_workers=2) as executor:
             executor.submit(stop_scheduler)
             scheduler.run()
-        assert [t.args for t in queue.get_tasks()] == [["a"], ["b"], ["a"]]
+        assert [t.args for t in queue.get_tasks()] == [["a"], ["a"], ["b"], ["a"]]
