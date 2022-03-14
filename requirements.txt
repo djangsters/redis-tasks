@@ -71,7 +71,7 @@ redis==4.1.2
     # via -r requirements.in
 six==1.16.0
     # via python-dateutil
-testfixtures==6.18.3
+testfixtures==6.18.5
     # via flake8-isort
 toml==0.10.2
     # via coverage
