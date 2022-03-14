@@ -67,7 +67,7 @@ testfixtures==6.18.3
     # via flake8-isort
 toml==0.10.2
     # via coverage
-tomli==2.0.0
+tomli==2.0.1
     # via
     #   pep517
     #   pytest
