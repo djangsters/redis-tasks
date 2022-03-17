@@ -83,7 +83,7 @@ typing-extensions==4.1.1
     # via importlib-metadata
 wheel==0.37.1
     # via pip-tools
-wrapt==1.13.3
+wrapt==1.14.0
     # via deprecated
 zipp==3.7.0
     # via
