@@ -63,7 +63,7 @@ pytest==7.1.1
     #   pytest-mock
 pytest-cov==3.0.0
     # via -r requirements.in
-pytest-mock==3.7.0
+pytest-mock==3.10.0
     # via -r requirements.in
 python-dateutil==2.8.2
     # via croniter
