@@ -1,6 +1,7 @@
 import datetime
 import logging
 import math
+import shutil
 import sys
 import time
 from functools import partial
@@ -125,7 +126,7 @@ def info(interval, by_queue, queues, **options):
 
 
 def print_separator():
-    click.echo("=" * (min(40, click.get_terminal_size()[0])))
+    click.echo("=" * (min(40, shutil.get_terminal_size().columns)))
 
 
 def show_queues(queues):
