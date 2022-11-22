@@ -63,7 +63,7 @@ pytest==7.2.0
     #   -r requirements.in
     #   pytest-cov
     #   pytest-mock
-pytest-cov==3.0.0
+pytest-cov==4.0.0
     # via -r requirements.in
 pytest-mock==3.10.0
     # via -r requirements.in
