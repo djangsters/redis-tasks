@@ -18,8 +18,6 @@ coverage[toml]==5.5
     # via pytest-cov
 croniter==1.3.4
     # via -r requirements.in
-deprecated==1.2.13
-    # via redis
 flake8==4.0.1
     # via
     #   -r requirements.in
@@ -73,7 +71,7 @@ python-dateutil==2.8.2
     # via croniter
 pytz==2022.1
     # via -r requirements.in
-redis==4.2.1
+redis==4.3.5
     # via -r requirements.in
 six==1.16.0
     # via python-dateutil
@@ -93,8 +91,6 @@ typing-extensions==4.1.1
     #   redis
 wheel==0.37.1
     # via pip-tools
-wrapt==1.14.0
-    # via deprecated
 zipp==3.10.0
     # via
     #   importlib-metadata
