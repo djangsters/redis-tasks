@@ -84,7 +84,7 @@ tomli==2.0.1
     #   build
     #   pep517
     #   pytest
-typing-extensions==4.1.1
+typing-extensions==4.4.0
     # via
     #   async-timeout
     #   importlib-metadata
