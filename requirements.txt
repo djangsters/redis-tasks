@@ -48,7 +48,7 @@ packaging==21.3
     #   redis
 pep517==0.13.0
     # via build
-pip-tools==6.11.0
+pip-tools==6.12.1
     # via -r requirements.in
 pluggy==1.0.0
     # via pytest
