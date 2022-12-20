@@ -193,7 +193,7 @@ def test_persistence(assert_atomic, connection, time_mocker):
     assert as_dict(Worker.fetch(worker.id)) == as_dict(worker)
 
     for i in range(5):
-        store = random.sample(fields, 3)
+        store = random.sample(sorted(fields), 3)
         copy = Worker.fetch(worker.id)
         randomize_data(copy)
         copy._save(store)

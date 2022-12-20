@@ -260,7 +260,7 @@ def test_persistence(assert_atomic, connection, stub):
     assert task.error_message is None
 
     for i in range(5):
-        store = random.sample(fields, 7)
+        store = random.sample(sorted(fields), 7)
         copy = Task.fetch(task.id)
         randomize_data(copy)
         copy._save(store)
