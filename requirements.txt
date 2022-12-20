@@ -41,7 +41,7 @@ isort==5.10.1
     # via flake8-isort
 mccabe==0.6.1
     # via flake8
-packaging==21.3
+packaging==22.0
     # via
     #   build
     #   pytest
@@ -56,8 +56,6 @@ pycodestyle==2.8.0
     # via flake8
 pyflakes==2.4.0
     # via flake8
-pyparsing==3.0.9
-    # via packaging
 pytest==7.2.0
     # via
     #   -r requirements.in
