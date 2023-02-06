@@ -24,7 +24,7 @@ flake8==4.0.1
     # via
     #   -r requirements.in
     #   flake8-isort
-flake8-isort==5.0.3
+flake8-isort==6.0.0
     # via -r requirements.in
 importlib-metadata==4.2.0
     # via
