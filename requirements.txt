@@ -87,7 +87,7 @@ typing-extensions==4.4.0
     #   redis
 wheel==0.38.4
     # via pip-tools
-zipp==3.11.0
+zipp==3.15.0
     # via
     #   importlib-metadata
     #   pep517
