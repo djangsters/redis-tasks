@@ -41,7 +41,7 @@ isort==5.11.5
     # via flake8-isort
 mccabe==0.6.1
     # via flake8
-packaging==22.0
+packaging==23.1
     # via
     #   build
     #   pytest
