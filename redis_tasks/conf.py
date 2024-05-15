@@ -57,8 +57,6 @@ settings = Settings()
 
 
 class RTRedis(redis.StrictRedis):
-    RESPONSE_CALLBACKS = redis.StrictRedis.RESPONSE_CALLBACKS
-
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.set_response_callback('EXISTS', int)
