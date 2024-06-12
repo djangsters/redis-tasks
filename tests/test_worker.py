@@ -141,7 +141,7 @@ def test_heartbeat(mocker):
     worker = Worker('testworker', queues=[QueueFactory()])
     worker.startup()
     worker.heartbeat()
-    assert heartbeat.called_once_with(worker)
+    heartbeat.assert_called_once_with(worker)
 
 
 def test_persistence(assert_atomic, connection, time_mocker):
