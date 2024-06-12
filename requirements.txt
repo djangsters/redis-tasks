@@ -53,7 +53,7 @@ pytest-mock==3.10.0
     # via -r requirements.in
 python-dateutil==2.8.2
     # via croniter
-pytz==2022.7
+pytz==2024.1
     # via -r requirements.in
 redis==5.0.5
     # via -r requirements.in
