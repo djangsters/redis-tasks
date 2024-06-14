@@ -17,7 +17,7 @@ def test_successful_execute(mocker, stub):
     task = Task(stub)
     stub.mock.reset_mock()
     outcome = task.execute()
-    stub.mock.assert_called_once_with("foo", foo="bar")
+    stub.mock.assert_called_once_with()
     assert outcome.outcome == 'success'
 
 

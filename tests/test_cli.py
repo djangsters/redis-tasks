@@ -46,7 +46,7 @@ def test_worker(cli_run, mocker):
     worker_main = mocker.patch('redis_tasks.cli.worker_main')
     log_config = mocker.patch('logging.basicConfig')
     cli_run('worker')
-    worker_main.assert_called_once_with(['default'])
+    worker_main.assert_called_once_with(['default'], burst=False, description=None)
     log_config.assert_called_once()
     assert log_config.call_args[1]["level"] == "INFO"
 
