@@ -11,13 +11,13 @@ from tests.utils import Something
 def test_successful_execute(mocker, stub):
     task = Task(stub, ["foo"], {"foo": "bar"})
     outcome = task.execute()
-    assert stub.mock.called_once_with("foo", foo="bar")
+    stub.mock.assert_called_once_with("foo", foo="bar")
     assert outcome.outcome == 'success'
 
     task = Task(stub)
     stub.mock.reset_mock()
     outcome = task.execute()
-    assert stub.mock.called_once_with("foo", foo="bar")
+    stub.mock.assert_called_once_with()
     assert outcome.outcome == 'success'
 
 
@@ -25,7 +25,7 @@ def test_failed_execute(mocker, stub):
     stub.mock.side_effect = ValueError("TestException")
     task = Task(stub)
     outcome = task.execute()
-    assert stub.mock.called_once_with()
+    stub.mock.assert_called_once_with()
     assert outcome.outcome == 'failure'
     assert outcome.message.splitlines()[-1] == 'ValueError: TestException'
 
@@ -34,7 +34,7 @@ def test_aborted_execute(mocker, stub):
     stub.mock.side_effect = WorkerShutdown()
     task = Task(stub)
     outcome = task.execute()
-    assert stub.mock.called_once_with()
+    stub.mock.assert_called_once_with()
     assert outcome.outcome == 'failure'
     assert outcome.message.splitlines()[-1] == 'redis_tasks.exceptions.TaskAborted: Worker shutdown'
 
@@ -67,7 +67,7 @@ def test_shutdown_cm(mocker, stub):
 
     stub.mock.reset_mock()
     outcome = task.execute(shutdown_cm=exit_shutdown_cm())
-    assert stub.mock.called_once_with()
+    stub.mock.assert_called_once_with()
     assert outcome.outcome == 'failure'
     assert 'Worker shutdown' in outcome.message.splitlines()[-1]
 

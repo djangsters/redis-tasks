@@ -8,6 +8,7 @@ python:
   - "3.9"
   - "3.10"
   - "3.11"
+  - "3.12"
 install:
   - pip install tox-travis 'tox<4'  # incompatible with tox>=4
   - pip install coveralls
